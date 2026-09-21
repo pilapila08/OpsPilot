@@ -90,6 +90,7 @@ blob-report/
 *.pid
 
 # IDE and editor settings
+.workbuddy/
 .idea/
 .vscode/
 *.code-workspace
@@ -102,4 +103,3 @@ blob-report/
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
-
