@@ -1,9 +1,9 @@
 # Project Status
 
 - Updated: 2026-09-22
-- Current phase: V0 Complete
-- Current task: None（等待 V1 工作单拆分）
-- Repository state: V0 Runtime 协议、存储模型与首个可回放 CrashLoopBackOff Case 已完成
+- Current phase: V1 Agent MVP
+- Current task: `V1-001-kubernetes-client-boundary`
+- Repository state: V0 已验收并冻结为 v0.1；V1 架构与 8 个工作单已拆分
 
 ## 已完成
 
@@ -23,21 +23,26 @@
 - V0-005 完成：40 秒慢启动应用、故障/修复 Kubernetes 清单和五步固定 ToolResponse 回放已建立。
 - CrashLoopBackOff Ground Truth 包含重启次数、Liveness 失败、启动耗时和 Probe 配置四类 Evidence，并绑定预期 Claim 与 Verification。
 - 故障探针约 20 秒触发重启；Startup Probe 修复提供约 50 秒窗口，恢复快照为 Ready 且零重启，完整测试达到 114 项。
+- V0 正式验收通过：9 项原始验收标准均有代码与可执行测试支撑，基线提交为 `252bfe50078b7fa63e1d5468ab8f70a53bae9503`。
+- 接受 ADR 0003：冻结 v0.1 Runtime、Tool、Evidence、Error、Storage 与 Case 契约，破坏性变更必须版本化。
+- V1 Agent MVP 与五个只读 Kubernetes Tool 架构完成，8 个边界明确的工作单已写入 `tasks/`。
 
 ## 正在进行
 
-- V0 工作单全部完成，等待 V1 范围确认与工作单拆分。
+- `V1-001` 已 Ready：实现 Kubernetes SDK 只读边界、公共 Schema、错误翻译和单 Pod 目标解析。
 
 ## 下一步
 
-1. 核对 V0 阶段验收并冻结首版 Runtime、Tool、Evidence、Storage 与 Case 契约。
-2. 拆分 V1 工作单，优先实现五个只读 Kubernetes Tool 和单故障诊断闭环。
+1. 完成 `V1-001`：Kubernetes Client Boundary 与目标解析。
+2. 完成 `V1-002`：实现并注册五个只读 Kubernetes Tool。
+3. 并行准备 `V1-003`：Structured Model Gateway 与 Intent Router。
 
 ## 已知风险与待决问题
 
-- Service/Deployment 到具体 Pod 的资源解析规则尚未设计。
+- V1 只支持单副本 Deployment 到单 Pod 的确定性解析；多副本和滚动发布选择留到 V2。
 - Evidence 原始结果的存储格式、压缩和保留周期尚未确定。
-- Verifier 的确定性规则与 LLM 判断边界尚未确定。
+- 首个 Live LLM provider adapter 尚未选定，必须保持 Model Gateway provider-neutral。
+- 真实 Kubernetes 只读 smoke test 尚未执行，V1 默认验收先依赖 Offline Replay。
 
 ## 阻塞项
 

@@ -17,6 +17,6 @@
 V0 -> V1 -> V2 -> V3 -> V4 -> V5
 ```
 
-V0 工作单已完成，V1 工作单尚未拆分。进入 V1 后仍不提前引入 RAG、MCP、Multi-Agent、写操作或完整 React 前端。
+V0 已通过[阶段验收](v0-acceptance.md)，`v0.1` 契约基线已经冻结。V1 已拆分为 8 个工作单，当前从 `V1-001` Kubernetes Client Boundary 开始；仍不提前引入 RAG、MCP、Multi-Agent、写操作或完整 React 前端。
 
 详细阶段需求以根目录 `OpsPilot_六阶段技术设计文档.md` 为原始参考；实施中的最新事实以工作单、架构协议、ADR 和测试为准。
