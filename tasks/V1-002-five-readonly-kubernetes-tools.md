@@ -1,6 +1,6 @@
 # V1-002: 五个只读 Kubernetes Tool
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V1-001
 

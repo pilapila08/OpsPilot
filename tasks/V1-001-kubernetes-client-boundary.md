@@ -1,8 +1,9 @@
 # V1-001: Kubernetes Client Boundary 与目标解析
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V0-001, V0-002, V0-003
+- Completed: 2026-09-22
 
 ## 目标
 
@@ -92,10 +93,17 @@ src/opspilot/integrations/kubernetes/
 
 ## 验收条件
 
-- [ ] Kubernetes SDK 被隔离在 Adapter 内，Tool/Runtime 可使用 Fake Reader。
-- [ ] PodTarget 只能表示一个合法、受限目标。
-- [ ] Deployment 到单 Pod 的解析确定且对零/多候选失败。
-- [ ] SDK 错误不泄漏响应正文、凭据或堆栈。
-- [ ] 所有 API 调用带 namespace 和超时。
-- [ ] 单元测试与 strict mypy 通过。
-- [ ] 更新 Kubernetes Tool 架构文档和项目状态。
+- [x] Kubernetes SDK 被隔离在 Adapter 内，Tool/Runtime 可使用 Fake Reader。
+- [x] PodTarget 只能表示一个合法、受限目标。
+- [x] Deployment 到单 Pod 的解析确定且对零/多候选失败。
+- [x] SDK 错误不泄漏响应正文、凭据或堆栈。
+- [x] 所有 API 调用带 namespace 和超时。
+- [x] 单元测试与 strict mypy 通过。
+- [x] 更新 Kubernetes Tool 架构文档和项目状态。
+
+## 验证结果
+
+- `python -m pytest tests/unit/integrations/kubernetes -q`：28 passed。
+- `python -m pytest`：142 passed。
+- `python -m mypy src tests`：Success，无类型问题。
+- 真实集群 smoke test 不属于本工作单，由 V1-008 执行。

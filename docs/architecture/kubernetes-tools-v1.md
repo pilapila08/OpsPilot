@@ -28,6 +28,14 @@ read_deployment
 
 生产 Adapter 负责 SDK 调用和异常翻译；单元测试使用 Fake Reader。Tool Handler 只依赖该协议，因此无需 mock SDK 内部实现。
 
+V1-001 的生产实现使用官方 Kubernetes Python SDK `>=36.0.3,<37`，并遵守以下边界：
+
+- 每个 Reader 实例使用独立 `Configuration`，不修改 SDK 全局默认配置。
+- 生产默认仅加载 in-cluster config；本地开发必须同时显式提供 kubeconfig 路径和 context，禁止自动扫描默认 kubeconfig。
+- 所有 SDK 调用显式传入 namespace 和 request timeout；Events 还必须传入数量上限。
+- SDK Model 在 Adapter 内通过 `sanitize_for_serialization` 转换为 JSON-only 对象，后续层不接触 SDK 类型。
+- Adapter 仅返回稳定、去敏后的内部错误，不透传 API 响应正文、原始异常文本或堆栈。
+
 ## 目标解析
 
 Pod 级 Tool 接受以下二选一目标：
@@ -167,6 +175,8 @@ Evidence：Probe 时间窗口、Startup Probe 是否存在、镜像和资源约�
 | Handler 输出不符合 Schema | `TOOL_OUTPUT_INVALID` | 否 |
 
 错误消息只包含资源类型、经校验的名称和稳定摘要，不包含响应正文、凭据或堆栈。
+
+这些错误由 `opspilot.integrations.kubernetes` 边界统一承载 `ErrorCode`。Tool Handler 在 V1-002 只负责把该稳定错误投影为 `ToolResponse`，不重新解释 SDK 异常。
 
 ## RBAC
 
