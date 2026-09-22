@@ -18,6 +18,7 @@
 - [Tool Protocol](architecture/tool-protocol.md)
 - [Evidence Model](architecture/evidence-model.md)
 - [Error Taxonomy](architecture/error-taxonomy.md)
+- [Storage Model](architecture/storage-model.md)
 - [安全边界](architecture/security-boundary.md)
 - [阶段路线图](roadmap/README.md)
 - [开发环境](development.md)

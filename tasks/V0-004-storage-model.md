@@ -1,8 +1,9 @@
 # V0-004: PostgreSQL 核心存储模型
 
-- Status: Ready
+- Status: Done
 - Phase: V0
 - Depends on: V0-001, V0-003
+- Completed: 2026-09-22
 
 ## 目标
 
@@ -23,7 +24,14 @@
 
 ## 验收条件
 
-- [ ] 空数据库可升级到最新版本并可回滚首个迁移。
-- [ ] Trace 可以关联所有调用、证据和结果。
-- [ ] Evidence 记录采用追加式写入语义。
-- [ ] 数据库集成测试通过并更新项目状态。
+- [x] 空数据库可升级到最新版本并可回滚首个迁移。
+- [x] Trace 可以关联所有调用、证据和结果。
+- [x] Evidence 记录采用追加式写入语义。
+- [x] 数据库集成测试通过并更新项目状态。
+
+## 验证结果
+
+- `python -m pytest`：108 passed
+- `python -m mypy src tests`：Success, no issues found
+- 临时 SQLite 数据库完成 `upgrade -> downgrade -> upgrade`，且 ORM 元数据无漂移。
+- PostgreSQL 离线迁移 SQL 包含 Evidence 追加写触发器。

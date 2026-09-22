@@ -41,4 +41,4 @@ NNNN-short-title.md
 ## 当前记录
 
 - [ADR 0001：受限状态机与 Tool Gateway](0001-bounded-runtime-and-tool-gateway.md)
-
+- [ADR 0002：采用 SQLAlchemy 与 Alembic 管理核心存储](0002-sqlalchemy-alembic-storage.md)

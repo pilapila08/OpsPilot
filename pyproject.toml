@@ -9,7 +9,10 @@ description = "Auditable agent runtime for Kubernetes incident diagnosis"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+    "alembic>=1.13,<2",
     "pydantic>=2.8,<3",
+    "psycopg[binary]>=3.2,<4",
+    "sqlalchemy>=2.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -30,4 +33,3 @@ pythonpath = ["src"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
-

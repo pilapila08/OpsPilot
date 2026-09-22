@@ -1,6 +1,6 @@
 # V0-005: 可复现的 CrashLoopBackOff Case
 
-- Status: Planned
+- Status: Ready
 - Phase: V0
 - Depends on: V0-002, V0-003
 
@@ -28,4 +28,3 @@
 - [ ] 修复 Probe 后 Case 恢复正常。
 - [ ] Fixture 可用于后续集成测试和 Offline Replay。
 - [ ] 复现说明与项目状态已更新。
-
