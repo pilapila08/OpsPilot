@@ -1,0 +1,44 @@
+{
+  "success": true,
+  "data": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "slow-start-api-7d9f4b6c8d-abcde",
+      "namespace": "opspilot-fixtures",
+      "owner": "deployment/slow-start-api"
+    },
+    "status": {
+      "phase": "Running",
+      "containerStatuses": [
+        {
+          "name": "slow-start-api",
+          "ready": false,
+          "restartCount": 5,
+          "state": {
+            "waiting": {
+              "reason": "CrashLoopBackOff",
+              "message": "back-off 20s restarting failed container"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "exitCode": 137,
+              "reason": "Error",
+              "startedAt": "2026-09-22T01:00:00Z",
+              "finishedAt": "2026-09-22T01:00:20Z"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "call_id": "call_pod_status",
+    "tool_name": "k8s.get_pod_status",
+    "source": "kubernetes",
+    "duration_ms": 24,
+    "tool_version": "v1"
+  },
+  "error": null
+}

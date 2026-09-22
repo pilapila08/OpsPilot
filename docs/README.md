@@ -22,6 +22,7 @@
 - [安全边界](architecture/security-boundary.md)
 - [阶段路线图](roadmap/README.md)
 - [开发环境](development.md)
+- [诊断 Case Fixtures](../fixtures/README.md)
 - [当前状态](STATUS.md)
 - [架构决策](adr/README.md)
 - [任务清单](../tasks/README.md)

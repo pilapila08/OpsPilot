@@ -1,9 +1,9 @@
 # Project Status
 
 - Updated: 2026-09-22
-- Current phase: V0 Design
-- Current task: `V0-005-crashloop-case`
-- Repository state: V0 核心契约、Tool Registry、Evidence Contract、错误分类与 PostgreSQL 核心存储已实现
+- Current phase: V0 Complete
+- Current task: None（等待 V1 工作单拆分）
+- Repository state: V0 Runtime 协议、存储模型与首个可回放 CrashLoopBackOff Case 已完成
 
 ## 已完成
 
@@ -20,14 +20,18 @@
 - V0-004 完成：SQLAlchemy 2.0 核心模型、Alembic 首个迁移与 psycopg 3 PostgreSQL 驱动已建立。
 - 七张核心表可完整关联任务、Trace、LLM/Tool 调用、Evidence、Prompt 版本和诊断结果；Evidence 由 ORM 与 PostgreSQL 触发器共同保护追加写语义。
 - 空库迁移升级、回滚、元数据漂移与 PostgreSQL DDL 验证完成，完整测试达到 108 项。
+- V0-005 完成：40 秒慢启动应用、故障/修复 Kubernetes 清单和五步固定 ToolResponse 回放已建立。
+- CrashLoopBackOff Ground Truth 包含重启次数、Liveness 失败、启动耗时和 Probe 配置四类 Evidence，并绑定预期 Claim 与 Verification。
+- 故障探针约 20 秒触发重启；Startup Probe 修复提供约 50 秒窗口，恢复快照为 Ready 且零重启，完整测试达到 114 项。
 
 ## 正在进行
 
-- V0-005 可复现 CrashLoopBackOff Case 已就绪。
+- V0 工作单全部完成，等待 V1 范围确认与工作单拆分。
 
 ## 下一步
 
-1. 完成 `V0-005`：构建可复现的 CrashLoopBackOff Mock Case。
+1. 核对 V0 阶段验收并冻结首版 Runtime、Tool、Evidence、Storage 与 Case 契约。
+2. 拆分 V1 工作单，优先实现五个只读 Kubernetes Tool 和单故障诊断闭环。
 
 ## 已知风险与待决问题
 

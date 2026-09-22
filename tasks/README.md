@@ -8,6 +8,6 @@
 | V0-002 | [Tool Protocol 与 Registry](V0-002-tool-protocol-and-registry.md) | Done | V0-001 |
 | V0-003 | [Evidence 与 Error Taxonomy](V0-003-evidence-and-errors.md) | Done | V0-001 |
 | V0-004 | [存储模型](V0-004-storage-model.md) | Done | V0-001、V0-003 |
-| V0-005 | [首个可复现故障 Case](V0-005-crashloop-case.md) | Ready | V0-002、V0-003 |
+| V0-005 | [首个可复现故障 Case](V0-005-crashloop-case.md) | Done | V0-002、V0-003 |
 
 任务状态使用：`Planned`、`Ready`、`In Progress`、`Blocked`、`Done`。

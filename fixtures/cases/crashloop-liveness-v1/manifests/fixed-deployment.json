@@ -1,0 +1,66 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "slow-start-api",
+    "namespace": "opspilot-fixtures",
+    "labels": {
+      "app.kubernetes.io/name": "slow-start-api",
+      "app.kubernetes.io/part-of": "opspilot-fixtures"
+    }
+  },
+  "spec": {
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/name": "slow-start-api"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "slow-start-api"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "slow-start-api",
+            "image": "opspilot/slow-start-api:v0-005",
+            "imagePullPolicy": "Never",
+            "env": [
+              {
+                "name": "STARTUP_DELAY_SECONDS",
+                "value": "40"
+              }
+            ],
+            "ports": [
+              {
+                "name": "http",
+                "containerPort": 8080
+              }
+            ],
+            "startupProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": "http"
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 1,
+              "failureThreshold": 10
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": "http"
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 1,
+              "failureThreshold": 3
+            }
+          }
+        ]
+      }
+    }
+  }
+}

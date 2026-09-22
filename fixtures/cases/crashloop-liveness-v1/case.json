@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "case_id": "crashloop_liveness_v1",
+  "title": "Slow startup killed by an early liveness probe",
+  "trace_id": "trace_crashloop_liveness_v1",
+  "target": {
+    "namespace": "opspilot-fixtures",
+    "resource": "slow-start-api"
+  },
+  "startup_duration_seconds": 40,
+  "broken_manifest": "manifests/broken-deployment.json",
+  "fixed_manifest": "manifests/fixed-deployment.json",
+  "replay_steps": [
+    {
+      "phase": "fault",
+      "invocation": {
+        "call_id": "call_pod_status",
+        "tool": "k8s.get_pod_status",
+        "arguments": {
+          "namespace": "opspilot-fixtures",
+          "pod": "slow-start-api-7d9f4b6c8d-abcde"
+        }
+      },
+      "response_file": "responses/fault/pod-status.json"
+    },
+    {
+      "phase": "fault",
+      "invocation": {
+        "call_id": "call_pod_events",
+        "tool": "k8s.get_pod_events",
+        "arguments": {
+          "namespace": "opspilot-fixtures",
+          "pod": "slow-start-api-7d9f4b6c8d-abcde"
+        }
+      },
+      "response_file": "responses/fault/pod-events.json"
+    },
+    {
+      "phase": "fault",
+      "invocation": {
+        "call_id": "call_previous_logs",
+        "tool": "k8s.get_previous_logs",
+        "arguments": {
+          "namespace": "opspilot-fixtures",
+          "pod": "slow-start-api-7d9f4b6c8d-abcde",
+          "container": "slow-start-api"
+        }
+      },
+      "response_file": "responses/fault/previous-logs.json"
+    },
+    {
+      "phase": "fault",
+      "invocation": {
+        "call_id": "call_deployment",
+        "tool": "k8s.get_deployment",
+        "arguments": {
+          "namespace": "opspilot-fixtures",
+          "deployment": "slow-start-api"
+        }
+      },
+      "response_file": "responses/fault/deployment.json"
+    },
+    {
+      "phase": "recovery",
+      "invocation": {
+        "call_id": "call_recovery_status",
+        "tool": "k8s.get_pod_status",
+        "arguments": {
+          "namespace": "opspilot-fixtures",
+          "pod": "slow-start-api-68f76dd8cf-fghij"
+        }
+      },
+      "response_file": "responses/recovery/pod-status.json"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev_restart_count",
+      "trace_id": "trace_crashloop_liveness_v1",
+      "tool_call_id": "call_pod_status",
+      "source": "kubernetes_status",
+      "resource": "opspilot-fixtures/slow-start-api-7d9f4b6c8d-abcde",
+      "observed_at": "2026-09-22T01:04:20Z",
+      "collected_at": "2026-09-22T01:04:21Z",
+      "content": "Container slow-start-api is waiting in CrashLoopBackOff with restartCount 5.",
+      "source_confidence": 1.0,
+      "raw_result_ref": "raw_pod_status",
+      "attributes": [
+        {
+          "key": "restart_count",
+          "value": 5
+        },
+        {
+          "key": "container_state",
+          "value": "CrashLoopBackOff"
+        }
+      ]
+    },
+    {
+      "evidence_id": "ev_liveness_failure",
+      "trace_id": "trace_crashloop_liveness_v1",
+      "tool_call_id": "call_pod_events",
+      "source": "kubernetes_events",
+      "resource": "opspilot-fixtures/slow-start-api-7d9f4b6c8d-abcde",
+      "observed_at": "2026-09-22T01:04:20Z",
+      "collected_at": "2026-09-22T01:04:21Z",
+      "content": "Kubelet reported repeated Liveness probe failures and restarted the container.",
+      "source_confidence": 1.0,
+      "raw_result_ref": "raw_pod_events",
+      "attributes": [
+        {
+          "key": "event_reason",
+          "value": "Unhealthy"
+        },
+        {
+          "key": "failure_count",
+          "value": 15
+        }
+      ]
+    },
+    {
+      "evidence_id": "ev_startup_duration",
+      "trace_id": "trace_crashloop_liveness_v1",
+      "tool_call_id": "call_previous_logs",
+      "source": "kubernetes_logs",
+      "resource": "opspilot-fixtures/slow-start-api-7d9f4b6c8d-abcde:slow-start-api",
+      "observed_at": "2026-09-22T01:00:20Z",
+      "collected_at": "2026-09-22T01:04:22Z",
+      "content": "The application declares a 40 second startup delay and was terminated after 20 seconds before becoming ready.",
+      "source_confidence": 1.0,
+      "raw_result_ref": "raw_previous_logs",
+      "attributes": [
+        {
+          "key": "startup_duration_seconds",
+          "value": 40
+        },
+        {
+          "key": "terminated_after_seconds",
+          "value": 20
+        }
+      ]
+    },
+    {
+      "evidence_id": "ev_probe_configuration",
+      "trace_id": "trace_crashloop_liveness_v1",
+      "tool_call_id": "call_deployment",
+      "source": "kubernetes_deployment",
+      "resource": "opspilot-fixtures/deployment/slow-start-api",
+      "observed_at": "2026-09-22T01:04:20Z",
+      "collected_at": "2026-09-22T01:04:23Z",
+      "content": "Liveness starts after 10 seconds, checks every 5 seconds, restarts after 3 failures, and no startupProbe is configured.",
+      "source_confidence": 1.0,
+      "raw_result_ref": "raw_deployment",
+      "attributes": [
+        {
+          "key": "initial_delay_seconds",
+          "value": 10
+        },
+        {
+          "key": "period_seconds",
+          "value": 5
+        },
+        {
+          "key": "failure_threshold",
+          "value": 3
+        },
+        {
+          "key": "startup_probe_configured",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "evidence_requirements": [
+    {
+      "signal": "restart_count",
+      "evidence_id": "ev_restart_count"
+    },
+    {
+      "signal": "liveness_failure",
+      "evidence_id": "ev_liveness_failure"
+    },
+    {
+      "signal": "startup_duration",
+      "evidence_id": "ev_startup_duration"
+    },
+    {
+      "signal": "probe_configuration",
+      "evidence_id": "ev_probe_configuration"
+    }
+  ],
+  "expected_diagnosis": {
+    "status": "COMPLETED",
+    "root_cause": "The application needs 40 seconds to start, but liveness begins at 10 seconds and restarts it after three failed checks at about 20 seconds.",
+    "recommendation": "Add a startupProbe with a failure window longer than 40 seconds so liveness is gated until startup succeeds.",
+    "claim": {
+      "claim_id": "claim_liveness_kills_slow_start",
+      "text": "An early liveness probe repeatedly kills the application before its 40 second startup completes.",
+      "evidence_ids": [
+        "ev_restart_count",
+        "ev_liveness_failure",
+        "ev_startup_duration",
+        "ev_probe_configuration"
+      ],
+      "inference_confidence": 0.99
+    },
+    "verification": {
+      "claim_id": "claim_liveness_kills_slow_start",
+      "supported": true,
+      "verification_confidence": 0.99,
+      "checked_evidence_ids": [
+        "ev_restart_count",
+        "ev_liveness_failure",
+        "ev_startup_duration",
+        "ev_probe_configuration"
+      ],
+      "missing_evidence": [],
+      "contradictions": [],
+      "rationale": "Status, events, previous logs, and deployment configuration establish the restart timing and its cause."
+    }
+  },
+  "recovery": {
+    "response_file": "responses/recovery/pod-status.json",
+    "phase": "Running",
+    "ready": true,
+    "max_restart_count": 0
+  }
+}

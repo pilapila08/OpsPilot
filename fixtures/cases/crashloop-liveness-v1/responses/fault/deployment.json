@@ -1,0 +1,54 @@
+{
+  "success": true,
+  "data": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "slow-start-api",
+      "namespace": "opspilot-fixtures",
+      "generation": 1
+    },
+    "spec": {
+      "replicas": 1,
+      "template": {
+        "spec": {
+          "containers": [
+            {
+              "name": "slow-start-api",
+              "image": "opspilot/slow-start-api:v0-005",
+              "env": [
+                {
+                  "name": "STARTUP_DELAY_SECONDS",
+                  "value": "40"
+                }
+              ],
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "initialDelaySeconds": 10,
+                "periodSeconds": 5,
+                "timeoutSeconds": 1,
+                "failureThreshold": 3
+              }
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "replicas": 1,
+      "readyReplicas": 0,
+      "unavailableReplicas": 1
+    }
+  },
+  "metadata": {
+    "call_id": "call_deployment",
+    "tool_name": "k8s.get_deployment",
+    "source": "kubernetes",
+    "duration_ms": 27,
+    "tool_version": "v1"
+  },
+  "error": null
+}

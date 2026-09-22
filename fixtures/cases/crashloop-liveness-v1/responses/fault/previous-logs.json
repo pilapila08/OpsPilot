@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "opspilot-fixtures",
+    "pod": "slow-start-api-7d9f4b6c8d-abcde",
+    "container": "slow-start-api",
+    "previous": true,
+    "configuredStartupDelaySeconds": 40,
+    "terminatedAfterSeconds": 20,
+    "content": "2026-09-22T01:00:00Z application boot started; configured_startup_delay_seconds=40\n2026-09-22T01:00:20Z process terminated before application ready"
+  },
+  "metadata": {
+    "call_id": "call_previous_logs",
+    "tool_name": "k8s.get_previous_logs",
+    "source": "kubernetes",
+    "duration_ms": 18,
+    "tool_version": "v1"
+  },
+  "error": null
+}
