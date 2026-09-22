@@ -1,8 +1,9 @@
 # V0-002: Tool Protocol 与 Registry
 
-- Status: Planned
+- Status: Done
 - Phase: V0
 - Depends on: V0-001
+- Completed: 2026-09-21
 
 ## 目标
 
@@ -29,9 +30,13 @@
 
 ## 验收条件
 
-- [ ] 未注册 Tool 被拒绝。
-- [ ] 输入输出均经过 Schema 校验。
-- [ ] 重复注册和非法风险等级被拒绝。
-- [ ] 错误被规范化，不泄露敏感内部信息。
-- [ ] 单元测试通过并更新项目状态。
+- [x] 未注册 Tool 被拒绝。
+- [x] 输入输出均经过 Schema 校验。
+- [x] 重复注册和非法风险等级被拒绝。
+- [x] 错误被规范化，不泄露敏感内部信息。
+- [x] 单元测试通过并更新项目状态。
 
+## 验证结果
+
+- `python -m pytest`：60 passed
+- `python -m mypy src tests`：Success, no issues found

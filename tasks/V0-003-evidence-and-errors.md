@@ -1,6 +1,6 @@
 # V0-003: Evidence、Verifier Contract 与 Error Taxonomy
 
-- Status: Planned
+- Status: Ready
 - Phase: V0
 - Depends on: V0-001
 
@@ -33,4 +33,3 @@
 - [ ] 非法置信度与时间字段被拒绝。
 - [ ] 错误分类和重试策略有参数化测试。
 - [ ] 单元测试通过并更新项目状态。
-
