@@ -75,6 +75,8 @@ Whitelist Lookup
 
 ## V0 错误码
 
+Tool 错误使用统一的 [Error Taxonomy](error-taxonomy.md)，不再维护独立错误分类。
+
 ```text
 TOOL_NOT_FOUND
 INVALID_ARGUMENT

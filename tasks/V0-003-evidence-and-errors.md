@@ -1,8 +1,9 @@
 # V0-003: Evidence、Verifier Contract 与 Error Taxonomy
 
-- Status: Ready
+- Status: Done
 - Phase: V0
 - Depends on: V0-001
+- Completed: 2026-09-22
 
 ## 目标
 
@@ -28,8 +29,13 @@
 
 ## 验收条件
 
-- [ ] Claim 必须引用至少一条 Evidence。
-- [ ] Evidence 可追溯到 trace 和 Tool Call。
-- [ ] 非法置信度与时间字段被拒绝。
-- [ ] 错误分类和重试策略有参数化测试。
-- [ ] 单元测试通过并更新项目状态。
+- [x] Claim 必须引用至少一条 Evidence。
+- [x] Evidence 可追溯到 trace 和 Tool Call。
+- [x] 非法置信度与时间字段被拒绝。
+- [x] 错误分类和重试策略有参数化测试。
+- [x] 单元测试通过并更新项目状态。
+
+## 验证结果
+
+- `python -m pytest`：101 passed
+- `python -m mypy src tests`：Success, no issues found

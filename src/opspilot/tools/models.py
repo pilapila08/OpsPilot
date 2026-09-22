@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from inspect import iscoroutinefunction
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field, JsonValue, ValidationError, model_validator
 
 from opspilot.agent.schemas import StrictSchema
+from opspilot.errors import ErrorCode, ErrorInfo, error_policy
 
 TOOL_NAME_PATTERN = r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$"
 _CALL_ID_PATTERN = r"^[a-z][a-z0-9_-]{2,127}$"
@@ -26,17 +27,6 @@ class ToolRiskLevel(IntEnum):
     PROHIBITED = 2
 
 
-class ToolErrorCode(StrEnum):
-    """Stable protocol errors returned by the V0 tool boundary."""
-
-    TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
-    INVALID_ARGUMENT = "INVALID_ARGUMENT"
-    POLICY_REJECTED = "POLICY_REJECTED"
-    TOOL_TIMEOUT = "TOOL_TIMEOUT"
-    TOOL_EXECUTION_FAILED = "TOOL_EXECUTION_FAILED"
-    TOOL_OUTPUT_INVALID = "TOOL_OUTPUT_INVALID"
-
-
 class RetryPolicy(StrictSchema):
     """Retry declaration; retries are executed by a later Executor stage."""
 
@@ -44,9 +34,9 @@ class RetryPolicy(StrictSchema):
     initial_backoff_seconds: float = Field(default=0.25, ge=0, le=60)
     backoff_multiplier: float = Field(default=2.0, ge=1, le=10)
     max_backoff_seconds: float = Field(default=10, ge=0, le=300)
-    retryable_errors: tuple[ToolErrorCode, ...] = (
-        ToolErrorCode.TOOL_TIMEOUT,
-        ToolErrorCode.TOOL_EXECUTION_FAILED,
+    retryable_errors: tuple[ErrorCode, ...] = (
+        ErrorCode.TOOL_TIMEOUT,
+        ErrorCode.TOOL_EXECUTION_FAILED,
     )
 
     @model_validator(mode="after")
@@ -57,9 +47,17 @@ class RetryPolicy(StrictSchema):
             )
         if len(set(self.retryable_errors)) != len(self.retryable_errors):
             raise ValueError("retryable_errors cannot contain duplicates")
+        if any(not error_policy(code).retryable for code in self.retryable_errors):
+            raise ValueError("retry policy cannot promote non-retryable errors")
+        if self.max_retries > 0 and self.retryable_errors:
+            allowed_retries = min(
+                error_policy(code).max_retries for code in self.retryable_errors
+            )
+            if self.max_retries > allowed_retries:
+                raise ValueError("tool retries cannot exceed taxonomy defaults")
         return self
 
-    def permits(self, code: ToolErrorCode) -> bool:
+    def permits(self, code: ErrorCode) -> bool:
         return self.max_retries > 0 and code in self.retryable_errors
 
 
@@ -83,19 +81,13 @@ class ToolMetadata(StrictSchema):
     )
 
 
-class ToolError(StrictSchema):
-    code: ToolErrorCode
-    message: str = Field(min_length=1, max_length=500)
-    retryable: bool = False
-
-
 class ToolResponse(StrictSchema):
     """Normalized response returned across the Tool Gateway boundary."""
 
     success: bool
     data: dict[str, JsonValue] | None
     metadata: ToolMetadata
-    error: ToolError | None
+    error: ErrorInfo | None
 
     @model_validator(mode="after")
     def validate_result_shape(self) -> ToolResponse:
@@ -192,4 +184,3 @@ class ToolDefinition(Generic[ToolInput, ToolOutput]):
             version=self.version,
             source=self.source,
         )
-

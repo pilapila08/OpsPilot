@@ -4,12 +4,11 @@ import pytest
 from pydantic import JsonValue, ValidationError
 
 from opspilot.agent.schemas import StrictSchema
+from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.tools.models import (
     InvalidToolDefinition,
     RetryPolicy,
     ToolDefinition,
-    ToolError,
-    ToolErrorCode,
     ToolHandler,
     ToolInvocation,
     ToolMetadata,
@@ -138,9 +137,9 @@ def test_invocation_accepts_only_json_arguments() -> None:
         (
             True,
             {"echoed": 1},
-            ToolError(
-                code=ToolErrorCode.TOOL_EXECUTION_FAILED,
-                message="failed",
+            ErrorInfo.from_code(
+                ErrorCode.TOOL_EXECUTION_FAILED,
+                "failed",
             ),
         ),
         (False, {"echoed": 1}, None),
@@ -150,7 +149,7 @@ def test_invocation_accepts_only_json_arguments() -> None:
 def test_response_enforces_success_and_failure_shape(
     success: bool,
     data: dict[str, JsonValue] | None,
-    error: ToolError | None,
+    error: ErrorInfo | None,
 ) -> None:
     with pytest.raises(ValidationError):
         ToolResponse(
@@ -168,7 +167,10 @@ def test_retry_policy_rejects_invalid_or_duplicate_configuration() -> None:
     with pytest.raises(ValidationError):
         RetryPolicy(
             retryable_errors=(
-                ToolErrorCode.TOOL_TIMEOUT,
-                ToolErrorCode.TOOL_TIMEOUT,
+                ErrorCode.TOOL_TIMEOUT,
+                ErrorCode.TOOL_TIMEOUT,
             )
         )
+
+    with pytest.raises(ValidationError):
+        RetryPolicy(retryable_errors=(ErrorCode.INVALID_ARGUMENT,))

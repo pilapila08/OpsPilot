@@ -8,11 +8,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.tools.models import (
     ToolDefinition,
     ToolDescriptor,
-    ToolError,
-    ToolErrorCode,
     ToolInvocation,
     ToolMetadata,
     ToolResponse,
@@ -61,7 +60,7 @@ class ToolRegistry:
             return self._failure(
                 invocation=invocation,
                 started_at=started_at,
-                code=ToolErrorCode.TOOL_NOT_FOUND,
+                code=ErrorCode.TOOL_NOT_FOUND,
                 message="tool is not registered",
             )
 
@@ -69,7 +68,7 @@ class ToolRegistry:
             return self._failure(
                 invocation=invocation,
                 started_at=started_at,
-                code=ToolErrorCode.POLICY_REJECTED,
+                code=ErrorCode.POLICY_REJECTED,
                 message="tool is not executable without policy authorization",
                 definition=definition,
             )
@@ -82,7 +81,7 @@ class ToolRegistry:
             return self._failure(
                 invocation=invocation,
                 started_at=started_at,
-                code=ToolErrorCode.INVALID_ARGUMENT,
+                code=ErrorCode.INVALID_ARGUMENT,
                 message="tool arguments failed schema validation",
                 definition=definition,
             )
@@ -94,7 +93,7 @@ class ToolRegistry:
             return self._failure(
                 invocation=invocation,
                 started_at=started_at,
-                code=ToolErrorCode.TOOL_TIMEOUT,
+                code=ErrorCode.TOOL_TIMEOUT,
                 message="tool execution timed out",
                 definition=definition,
             )
@@ -104,7 +103,7 @@ class ToolRegistry:
             return self._failure(
                 invocation=invocation,
                 started_at=started_at,
-                code=ToolErrorCode.TOOL_EXECUTION_FAILED,
+                code=ErrorCode.TOOL_EXECUTION_FAILED,
                 message="tool execution failed",
                 definition=definition,
             )
@@ -115,7 +114,7 @@ class ToolRegistry:
             return self._failure(
                 invocation=invocation,
                 started_at=started_at,
-                code=ToolErrorCode.TOOL_OUTPUT_INVALID,
+                code=ErrorCode.TOOL_OUTPUT_INVALID,
                 message="tool result failed schema validation",
                 definition=definition,
             )
@@ -147,7 +146,7 @@ class ToolRegistry:
         *,
         invocation: ToolInvocation,
         started_at: float,
-        code: ToolErrorCode,
+        code: ErrorCode,
         message: str,
         definition: ToolDefinition[Any, Any] | None = None,
     ) -> ToolResponse:
@@ -158,6 +157,9 @@ class ToolRegistry:
             success=False,
             data=None,
             metadata=cls._metadata(invocation, started_at, definition),
-            error=ToolError(code=code, message=message, retryable=retryable),
+            error=ErrorInfo.from_code(
+                code,
+                message,
+                retryable=retryable,
+            ),
         )
-

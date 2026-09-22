@@ -1,12 +1,11 @@
 """Controlled tool protocol and whitelist registry."""
 
+from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.tools.models import (
     InvalidToolDefinition,
     RetryPolicy,
     ToolDefinition,
     ToolDescriptor,
-    ToolError,
-    ToolErrorCode,
     ToolInvocation,
     ToolMetadata,
     ToolResponse,
@@ -20,12 +19,12 @@ from opspilot.tools.registry import (
 
 __all__ = [
     "DuplicateToolError",
+    "ErrorCode",
+    "ErrorInfo",
     "InvalidToolDefinition",
     "RetryPolicy",
     "ToolDefinition",
     "ToolDescriptor",
-    "ToolError",
-    "ToolErrorCode",
     "ToolInvocation",
     "ToolMetadata",
     "ToolNotRegisteredError",
@@ -33,4 +32,3 @@ __all__ = [
     "ToolResponse",
     "ToolRiskLevel",
 ]
-

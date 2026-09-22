@@ -1,6 +1,6 @@
 # V0-004: PostgreSQL 核心存储模型
 
-- Status: Planned
+- Status: Ready
 - Phase: V0
 - Depends on: V0-001, V0-003
 
@@ -27,4 +27,3 @@
 - [ ] Trace 可以关联所有调用、证据和结果。
 - [ ] Evidence 记录采用追加式写入语义。
 - [ ] 数据库集成测试通过并更新项目状态。
-

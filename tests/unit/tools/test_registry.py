@@ -5,10 +5,10 @@ import pytest
 from pydantic import JsonValue
 
 from opspilot.agent.schemas import StrictSchema
+from opspilot.errors import ErrorAction, ErrorCategory, ErrorCode
 from opspilot.tools.models import (
     RetryPolicy,
     ToolDefinition,
-    ToolErrorCode,
     ToolHandler,
     ToolInvocation,
     ToolResponse,
@@ -116,7 +116,7 @@ def test_unregistered_invocation_returns_normalized_error() -> None:
     assert response.success is False
     assert response.data is None
     assert response.error is not None
-    assert response.error.code is ToolErrorCode.TOOL_NOT_FOUND
+    assert response.error.code is ErrorCode.TOOL_NOT_FOUND
     assert response.error.retryable is False
 
 
@@ -135,7 +135,7 @@ def test_invalid_arguments_do_not_reach_handler() -> None:
 
     assert called is False
     assert response.error is not None
-    assert response.error.code is ToolErrorCode.INVALID_ARGUMENT
+    assert response.error.code is ErrorCode.INVALID_ARGUMENT
 
 
 @pytest.mark.parametrize(
@@ -151,7 +151,7 @@ def test_non_read_only_tool_requires_policy_authorization(
     response = invoke(registry)
 
     assert response.error is not None
-    assert response.error.code is ToolErrorCode.POLICY_REJECTED
+    assert response.error.code is ErrorCode.POLICY_REJECTED
 
 
 def test_timeout_is_normalized_and_marked_retryable_by_policy() -> None:
@@ -171,7 +171,9 @@ def test_timeout_is_normalized_and_marked_retryable_by_policy() -> None:
     response = invoke(registry)
 
     assert response.error is not None
-    assert response.error.code is ToolErrorCode.TOOL_TIMEOUT
+    assert response.error.code is ErrorCode.TOOL_TIMEOUT
+    assert response.error.category is ErrorCategory.TOOL
+    assert response.error.action is ErrorAction.RETRY
     assert response.error.retryable is True
 
 
@@ -185,7 +187,7 @@ def test_invalid_output_is_normalized() -> None:
     response = invoke(registry)
 
     assert response.error is not None
-    assert response.error.code is ToolErrorCode.TOOL_OUTPUT_INVALID
+    assert response.error.code is ErrorCode.TOOL_OUTPUT_INVALID
 
 
 def test_internal_exception_is_not_exposed() -> None:
@@ -198,6 +200,8 @@ def test_internal_exception_is_not_exposed() -> None:
     response = invoke(registry)
 
     assert response.error is not None
-    assert response.error.code is ToolErrorCode.TOOL_EXECUTION_FAILED
+    assert response.error.code is ErrorCode.TOOL_EXECUTION_FAILED
+    assert response.error.action is ErrorAction.FAIL
+    assert response.error.retryable is False
     assert "secret" not in response.error.message
     assert "database_password" not in response.model_dump_json()
