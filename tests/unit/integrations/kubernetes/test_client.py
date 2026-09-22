@@ -12,6 +12,7 @@ from opspilot.integrations.kubernetes import (
     KubernetesConfigurationError,
     KubernetesConnectionMode,
     KubernetesDataError,
+    KubernetesInvalidRequestError,
     KubernetesNotFoundError,
     KubernetesPermissionError,
     KubernetesSdkReader,
@@ -183,6 +184,11 @@ class RaisingCoreApi:
             lambda: ApiException(status=403, reason="sensitive upstream body"),
             KubernetesPermissionError,
             ErrorCode.PERMISSION_DENIED,
+        ),
+        (
+            lambda: ApiException(status=400, reason="sensitive upstream body"),
+            KubernetesInvalidRequestError,
+            ErrorCode.INVALID_ARGUMENT,
         ),
         (
             lambda: ApiException(status=503, reason="sensitive upstream body"),

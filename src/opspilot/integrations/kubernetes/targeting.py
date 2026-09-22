@@ -35,18 +35,30 @@ class PodTargetResolver:
         self._reader = reader
 
     async def resolve(self, target: PodTarget) -> ResolvedPod:
+        resolved, _ = await self.resolve_with_pod(target)
+        return resolved
+
+    async def resolve_with_pod(
+        self,
+        target: PodTarget,
+    ) -> tuple[ResolvedPod, JsonObject]:
+        """Resolve a target and retain the validated Pod response for handlers."""
+
         if target.pod_name is not None:
             pod = await self._reader.read_pod(
                 namespace=target.namespace,
                 pod_name=target.pod_name,
             )
-            return _resolved_pod(
+            return (
+                _resolved_pod(
+                    pod,
+                    expected_namespace=target.namespace,
+                    expected_name=target.pod_name,
+                    requested_container=target.container_name,
+                    source="pod",
+                    workload_name=None,
+                ),
                 pod,
-                expected_namespace=target.namespace,
-                expected_name=target.pod_name,
-                requested_container=target.container_name,
-                source="pod",
-                workload_name=None,
             )
 
         workload_name = target.workload_name
@@ -76,13 +88,17 @@ class PodTargetResolver:
                 "Multiple active pods matched the Kubernetes workload"
             )
 
-        return _resolved_pod(
-            active_pods[0],
-            expected_namespace=target.namespace,
-            expected_name=None,
-            requested_container=target.container_name,
-            source="deployment",
-            workload_name=workload_name,
+        selected_pod = active_pods[0]
+        return (
+            _resolved_pod(
+                selected_pod,
+                expected_namespace=target.namespace,
+                expected_name=None,
+                requested_container=target.container_name,
+                source="deployment",
+                workload_name=workload_name,
+            ),
+            selected_pod,
         )
 
 

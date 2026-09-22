@@ -88,6 +88,8 @@ TOOL_OUTPUT_INVALID
 
 错误响应只包含稳定错误码、通用消息和 `retryable` 标记。Handler 的原始异常、参数内容和堆栈不会返回给 Planner。
 
+V1 起，Handler 可以抛出受信任的 `ToolExecutionError` 子类，携带统一 `ErrorCode` 和不超过 500 字符的安全消息。Registry 仅保留这类显式错误的分类；其他异常继续统一映射为 `TOOL_EXECUTION_FAILED`，不暴露原始文本。是否可重试仍由 Tool Definition 的 `RetryPolicy` 与统一 Taxonomy 共同决定。
+
 ## 风险执行规则
 
 - Risk 0：允许 Registry 在验证后执行。
@@ -105,3 +107,5 @@ k8s.get_deployment
 ```
 
 这些工具全部为 Risk 0，只允许读取明确 namespace 中符合 Kubernetes 命名规则的资源。禁止注册任意命令执行工具。
+
+`build_kubernetes_registry` 位于 `opspilot.tools.kubernetes`，返回只包含上述五个 Tool 的白名单 Registry。每个 Definition 使用独立输入模型、结构化输出模型、`source=kubernetes`、`version=v1`、10 秒 Registry timeout 和最多一次分类重试声明。

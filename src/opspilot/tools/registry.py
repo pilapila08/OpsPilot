@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from opspilot.errors import ErrorCode, ErrorInfo
+from opspilot.tools.errors import ToolExecutionError
 from opspilot.tools.models import (
     ToolDefinition,
     ToolDescriptor,
@@ -99,6 +100,14 @@ class ToolRegistry:
             )
         except asyncio.CancelledError:
             raise
+        except ToolExecutionError as exc:
+            return self._failure(
+                invocation=invocation,
+                started_at=started_at,
+                code=exc.code,
+                message=exc.safe_message,
+                definition=definition,
+            )
         except Exception:
             return self._failure(
                 invocation=invocation,

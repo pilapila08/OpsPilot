@@ -1,6 +1,6 @@
 # V1-003: Structured Model Gateway 与 Intent Router
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V0-001, V0-003, V0-004
 

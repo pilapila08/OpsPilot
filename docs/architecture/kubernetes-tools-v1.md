@@ -64,6 +64,16 @@ workload 解析流程：
 
 Planner 不能提供自由 label selector；selector 只能由已读取 Deployment 生成。
 
+## V1 Tool 实现
+
+五个 Handler 位于 `opspilot.tools.kubernetes`，只依赖 `KubernetesReader` 和 `PodTargetResolver`。`build_kubernetes_registry` 注册且只注册本文定义的五个 Tool。
+
+- Pod Status 复用 Resolver 已读取的 Pod，不为规范化状态重复请求 API。
+- Events 使用 Pod UID 与名称组成 field selector，最多请求并返回 100 条；结果按最新时间优先、事件名称升序稳定排列，message 最长 2048 字符。
+- Current/Previous Logs 共用 UTF-8 字节截断逻辑，输出不超过 64 KiB；多容器目标未指定 container 时明确失败。
+- Deployment selector、Probe、resources 和 environment 被转换为封闭 Schema；不返回未声明的 SDK 字段。
+- 敏感名称的 literal environment value 不进入输出；SecretKeyRef 仅保留引用元数据并固定标记为 redacted。
+
 ## Tool Schema
 
 ### k8s.get_pod_status
@@ -177,6 +187,8 @@ Evidence：Probe 时间窗口、Startup Probe 是否存在、镜像和资源约�
 错误消息只包含资源类型、经校验的名称和稳定摘要，不包含响应正文、凭据或堆栈。
 
 这些错误由 `opspilot.integrations.kubernetes` 边界统一承载 `ErrorCode`。Tool Handler 在 V1-002 只负责把该稳定错误投影为 `ToolResponse`，不重新解释 SDK 异常。
+
+Kubernetes API 的 400 响应映射为 `INVALID_ARGUMENT`，用于无 previous container instance 等不可重试请求失败；响应正文仍不透传。
 
 ## RBAC
 

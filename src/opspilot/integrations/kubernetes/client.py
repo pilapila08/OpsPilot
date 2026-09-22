@@ -18,6 +18,7 @@ from opspilot.integrations.kubernetes.errors import (
     KubernetesConfigurationError,
     KubernetesDataError,
     KubernetesIntegrationError,
+    KubernetesInvalidRequestError,
     KubernetesNotFoundError,
     KubernetesPermissionError,
     KubernetesTimeoutError,
@@ -272,6 +273,10 @@ def _translate_sdk_error(
         if status == 404:
             return KubernetesNotFoundError(
                 f"Kubernetes resource was not found during {operation}"
+            )
+        if status == 400:
+            return KubernetesInvalidRequestError(
+                f"Kubernetes request was rejected during {operation}"
             )
         if status in {401, 403}:
             return KubernetesPermissionError(

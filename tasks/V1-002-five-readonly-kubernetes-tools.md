@@ -1,8 +1,9 @@
 # V1-002: 五个只读 Kubernetes Tool
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V1-001
+- Completed: 2026-09-22
 
 ## 目标
 
@@ -90,10 +91,17 @@ Registry 仍只执行一次；真正重试由 V1-005 Executor 负责。
 
 ## 验收条件
 
-- [ ] 五个 Tool 均可通过 Registry 受控调用。
-- [ ] 五个 Tool 均声明 READ_ONLY、版本、timeout 与 retry policy。
-- [ ] 输出可表达 V0 CrashLoop Case 的全部原始事实。
-- [ ] 日志、Events 和环境变量满足限长与去敏规则。
-- [ ] 非法目标、权限、超时和 SDK 错误映射到统一 Taxonomy。
-- [ ] 单元测试、Registry 集成测试和 strict mypy 通过。
-- [ ] 更新 Tool Protocol、任务状态和项目状态。
+- [x] 五个 Tool 均可通过 Registry 受控调用。
+- [x] 五个 Tool 均声明 READ_ONLY、版本、timeout 与 retry policy。
+- [x] 输出可表达 V0 CrashLoop Case 的全部原始事实。
+- [x] 日志、Events 和环境变量满足限长与去敏规则。
+- [x] 非法目标、权限、超时和 SDK 错误映射到统一 Taxonomy。
+- [x] 单元测试、Registry 集成测试和 strict mypy 通过。
+- [x] 更新 Tool Protocol、任务状态和项目状态。
+
+## 验证结果
+
+- `python -m pytest tests/unit/tools/kubernetes tests/integration/tools tests/unit/tools/test_registry.py tests/unit/integrations/kubernetes -q`：61 passed。
+- `python -m pytest`：164 passed。
+- `python -m mypy src tests`：Success，无类型问题。
+- 真实 Kubernetes smoke test 仍由 V1-008 执行。

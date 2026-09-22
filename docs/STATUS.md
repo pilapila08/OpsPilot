@@ -2,8 +2,8 @@
 
 - Updated: 2026-09-22
 - Current phase: V1 Agent MVP
-- Current task: `V1-002-five-readonly-kubernetes-tools`
-- Repository state: V0 已验收并冻结为 v0.1；V1-001 Kubernetes 只读 Client Boundary 已完成
+- Current task: `V1-003-model-gateway-and-router`
+- Repository state: V0 已验收并冻结为 v0.1；V1-002 五个只读 Kubernetes Tool 已完成
 
 ## 已完成
 
@@ -29,16 +29,19 @@
 - V1-001 完成：官方 Kubernetes Python SDK 被隔离在 `KubernetesReader` / `KubernetesSdkReader` 边界内，支持显式 in-cluster 或指定 kubeconfig/context 配置。
 - 严格 `PodTarget`、日志查询限制、去敏错误翻译和 Deployment 到单 Pod 的确定性解析已实现；零候选、多候选和 terminating Pod 均有明确行为。
 - Kubernetes 边界 28 项定向测试通过，完整测试达到 142 项，strict mypy 通过。
+- V1-002 完成：Pod Status、Events、Current Logs、Previous Logs 和 Deployment 五个 Risk 0 Tool 已通过 `build_kubernetes_registry` 受控注册。
+- Tool 输出覆盖 CrashLoop 状态、事件、启动日志和 Probe 配置；Events、UTF-8 日志与环境变量分别完成限长、稳定排序和敏感值清洗。
+- Kubernetes 稳定错误可经受信任的 `ToolExecutionError` 投影到统一 Taxonomy，未知异常仍不暴露内部文本；完整测试达到 164 项，strict mypy 通过。
 
 ## 正在进行
 
-- `V1-002` 已 Ready：基于 Client Boundary 实现并注册五个只读 Kubernetes Tool。
+- `V1-003` 已 Ready：实现 Structured Model Gateway 与 Intent Router。
 
 ## 下一步
 
-1. 完成 `V1-002`：实现并注册五个只读 Kubernetes Tool。
-2. 完成 `V1-003`：Structured Model Gateway 与 Intent Router。
-3. 完成 `V1-004`：Planner 与 Plan Validator。
+1. 完成 `V1-003`：Structured Model Gateway 与 Intent Router。
+2. 完成 `V1-004`：Planner 与 Plan Validator。
+3. 完成 `V1-005`：Bounded Executor、Evidence Extraction 与持久化。
 
 ## 已知风险与待决问题
 

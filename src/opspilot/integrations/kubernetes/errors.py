@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from opspilot.errors import ErrorCode
+from opspilot.tools.errors import ToolExecutionError
 
 
-class KubernetesIntegrationError(RuntimeError):
+class KubernetesIntegrationError(ToolExecutionError):
     """Base class carrying a stable OpsPilot error code."""
 
     code: ErrorCode = ErrorCode.TOOL_EXECUTION_FAILED
@@ -16,6 +17,10 @@ class KubernetesConfigurationError(KubernetesIntegrationError):
 
 
 class KubernetesNotFoundError(KubernetesIntegrationError):
+    code = ErrorCode.INVALID_ARGUMENT
+
+
+class KubernetesInvalidRequestError(KubernetesIntegrationError):
     code = ErrorCode.INVALID_ARGUMENT
 
 

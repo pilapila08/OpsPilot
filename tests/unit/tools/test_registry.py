@@ -14,6 +14,7 @@ from opspilot.tools.models import (
     ToolResponse,
     ToolRiskLevel,
 )
+from opspilot.tools.errors import ToolExecutionError
 from opspilot.tools.registry import (
     DuplicateToolError,
     ToolNotRegisteredError,
@@ -205,3 +206,28 @@ def test_internal_exception_is_not_exposed() -> None:
     assert response.error.retryable is False
     assert "secret" not in response.error.message
     assert "database_password" not in response.model_dump_json()
+
+
+def test_trusted_tool_error_preserves_stable_code_and_safe_message() -> None:
+    class PermissionFailure(ToolExecutionError):
+        code = ErrorCode.PERMISSION_DENIED
+
+    async def denied_handler(arguments: EchoInput) -> EchoOutput:
+        del arguments
+        raise PermissionFailure("access denied by upstream policy")
+
+    registry = ToolRegistry()
+    registry.register(make_definition(handler=denied_handler))
+
+    response = invoke(registry)
+
+    assert response.error is not None
+    assert response.error.code is ErrorCode.PERMISSION_DENIED
+    assert response.error.message == "access denied by upstream policy"
+    assert response.error.retryable is False
+
+
+def test_trusted_tool_error_bounds_safe_message() -> None:
+    failure = ToolExecutionError("x" * 600)
+
+    assert len(failure.safe_message) == 500
