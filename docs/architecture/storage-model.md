@@ -40,6 +40,8 @@ diagnosis_tasks
 - Token、成本、延迟、重试、风险等级、置信度和 Schema 版本由数据库检查约束保护。
 - 删除采用限制型外键；V0 不实现级联清理、归档或分区。
 
+`SQLAlchemyModelAuditRepository` 复用 `prompt_versions` 和 `llm_calls`：Prompt component + version 不可原地更换内容；每次模型尝试独立追加并提交，包括 Schema 失败。审计请求保存 query hash/length 而非 query 原文，不保存凭据或 provider 异常正文。
+
 ## Evidence 追加写
 
 Evidence 不提供更新时间字段。SQLAlchemy 在 flush 前拒绝更新或删除 `EvidenceRecord`，PostgreSQL 使用触发器拒绝 `evidence` 表的 `UPDATE` 和 `DELETE`。修正或补充事实必须创建新 Evidence，并由后续结果引用新的 Evidence ID。

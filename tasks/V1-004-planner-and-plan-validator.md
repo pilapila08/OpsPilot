@@ -1,6 +1,6 @@
 # V1-004: Planner 与 Plan Validator
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V1-002, V1-003
 

@@ -11,6 +11,7 @@ from opspilot.storage.models import (
     PromptVersionRecord,
     ToolCallRecord,
 )
+from opspilot.storage.model_audit import SQLAlchemyModelAuditRepository
 
 __all__ = [
     "AgentRunRecord",
@@ -21,6 +22,6 @@ __all__ = [
     "EvidenceRecord",
     "LLMCallRecord",
     "PromptVersionRecord",
+    "SQLAlchemyModelAuditRepository",
     "ToolCallRecord",
 ]
-

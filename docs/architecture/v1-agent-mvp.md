@@ -45,6 +45,8 @@ POST /diagnosis
 
 每个箭头只传递 Pydantic Schema 或显式 Repository/Protocol，不传递 SDK 对象、数据库 Session 或自由文本控制指令。
 
+Structured Model 与 Router 的 V1 具体契约见 [Model Gateway and Intent Router V1](model-gateway-v1.md)。
+
 ## 模块边界
 
 | 模块 | 输入 | 输出 | 关键约束 |

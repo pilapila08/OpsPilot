@@ -32,3 +32,13 @@
 - 原始异常、堆栈、凭据和未经清洗的参数不得进入 API 错误响应。
 - V0-003 只定义策略；真正的重试循环由后续 Executor 实现。
 
+## V1 Model Gateway 映射
+
+- provider rate limit -> `LLM_RATE_LIMIT`。
+- provider timeout -> `LLM_TIMEOUT`。
+- context length -> `CONTEXT_TOO_LONG`。
+- structured output 校验失败 -> `SCHEMA_VALIDATION`。
+- credential/permission -> `PERMISSION_DENIED`。
+- 其他连接、状态或 SDK 错误 -> `EXTERNAL_SERVICE_ERROR`。
+
+Intent Router 只在 `SCHEMA_VALIDATION` 时执行最多两次 regeneration。安全错误消息不包含 provider 原始正文、认证信息或无效输出。

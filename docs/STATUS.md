@@ -2,8 +2,8 @@
 
 - Updated: 2026-09-22
 - Current phase: V1 Agent MVP
-- Current task: `V1-003-model-gateway-and-router`
-- Repository state: V0 已验收并冻结为 v0.1；V1-002 五个只读 Kubernetes Tool 已完成
+- Current task: `V1-004-planner-and-plan-validator`
+- Repository state: V0 已验收并冻结为 v0.1；V1-003 Structured Model Gateway 与 Intent Router 已完成
 
 ## 已完成
 
@@ -32,22 +32,25 @@
 - V1-002 完成：Pod Status、Events、Current Logs、Previous Logs 和 Deployment 五个 Risk 0 Tool 已通过 `build_kubernetes_registry` 受控注册。
 - Tool 输出覆盖 CrashLoop 状态、事件、启动日志和 Probe 配置；Events、UTF-8 日志与环境变量分别完成限长、稳定排序和敏感值清洗。
 - Kubernetes 稳定错误可经受信任的 `ToolExecutionError` 投影到统一 Taxonomy，未知异常仍不暴露内部文本；完整测试达到 164 项，strict mypy 通过。
+- V1-003 完成：`StructuredModelClient`、`ScriptedModelClient` 与 OpenAI Responses Adapter 共用结构化结果契约，SDK 隐式重试关闭且凭据仅从环境读取。
+- Router Prompt 已版本化并绑定 SHA-256；显式 namespace 不进入模型输出 Schema，Schema regeneration 最多两次并消耗 Budget。
+- `SQLAlchemyModelAuditRepository` 复用冻结表记录每次成功/失败模型尝试，完整测试达到 186 项，strict mypy 通过。
 
 ## 正在进行
 
-- `V1-003` 已 Ready：实现 Structured Model Gateway 与 Intent Router。
+- `V1-004` 已 Ready：实现 Planner 与 Plan Validator。
 
 ## 下一步
 
-1. 完成 `V1-003`：Structured Model Gateway 与 Intent Router。
-2. 完成 `V1-004`：Planner 与 Plan Validator。
-3. 完成 `V1-005`：Bounded Executor、Evidence Extraction 与持久化。
+1. 完成 `V1-004`：Planner 与 Plan Validator。
+2. 完成 `V1-005`：Bounded Executor、Evidence Extraction 与持久化。
+3. 完成 `V1-006`：CrashLoopBackOff Diagnosis 与基础 Verifier。
 
 ## 已知风险与待决问题
 
 - V1 只支持单副本 Deployment 到单 Pod 的确定性解析；多副本和滚动发布选择留到 V2。
 - Evidence 原始结果的存储格式、压缩和保留周期尚未确定。
-- 首个 Live LLM provider adapter 尚未选定，必须保持 Model Gateway provider-neutral。
+- OpenAI Live Adapter 已实现但尚未使用真实 API key 执行 smoke test；Model Gateway 保持 provider-neutral。
 - 真实 Kubernetes 只读 smoke test 尚未执行，V1 默认验收先依赖 Offline Replay。
 
 ## 阻塞项

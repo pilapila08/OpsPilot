@@ -1,8 +1,9 @@
 # V1-003: Structured Model Gateway 与 Intent Router
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V0-001, V0-003, V0-004
+- Completed: 2026-09-22
 
 ## 目标
 
@@ -80,10 +81,17 @@ Router 不导入 provider SDK。Provider Adapter 的选择和模型名称来自�
 
 ## 验收条件
 
-- [ ] Router 只依赖 StructuredModelClient Protocol。
-- [ ] Live 与 Scripted Adapter 使用同一结构化结果契约。
-- [ ] Router 对 V0 Case 请求产生预期 `IntentOutput`。
-- [ ] Schema regeneration 最多 2 次且受预算约束。
-- [ ] 每次模型尝试均记录版本、usage、延迟和结果状态。
-- [ ] 错误遵循统一 Taxonomy 且不泄漏凭据。
-- [ ] 单元测试、存储集成测试和 strict mypy 通过。
+- [x] Router 只依赖 StructuredModelClient Protocol。
+- [x] Live 与 Scripted Adapter 使用同一结构化结果契约。
+- [x] Router 对 V0 Case 请求产生预期 `IntentOutput`。
+- [x] Schema regeneration 最多 2 次且受预算约束。
+- [x] 每次模型尝试均记录版本、usage、延迟和结果状态。
+- [x] 错误遵循统一 Taxonomy 且不泄漏凭据。
+- [x] 单元测试、存储集成测试和 strict mypy 通过。
+
+## 验证结果
+
+- `python -m pytest tests/unit/llm tests/unit/routing tests/integration/storage/test_model_audit.py -q`：22 passed。
+- `python -m pytest`：186 passed。
+- `python -m mypy src tests`：Success，无类型问题。
+- OpenAI Adapter 仅使用 Fake Responses API 测试，未发送真实付费请求。
