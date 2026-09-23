@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import json
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
@@ -79,7 +80,9 @@ class ScriptedModelClient:
             raise step
 
         try:
-            output = output_model.model_validate(step.payload, strict=True)
+            output = output_model.model_validate_json(
+                json.dumps(step.payload), strict=True
+            )
         except ValidationError:
             usage = ModelUsage(
                 input_tokens=step.input_tokens,

@@ -1,6 +1,6 @@
 # V1-004: Planner 与 Plan Validator
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V1-002, V1-003
 
@@ -90,9 +90,16 @@ Validator 返回不可变 Validated Plan 或稳定 `ErrorInfo`，不得静默删
 
 ## 验收条件
 
-- [ ] `ExecutionPlanV1` 版本化且不破坏 V0 Plan。
-- [ ] Planner 只能看到 ToolDescriptor，不能看到 Handler/SDK。
-- [ ] Validator 在执行前拒绝未知、越权、非法参数和超预算计划。
-- [ ] V0 Case 产生包含 Status、Events、Previous Logs、Deployment 的计划。
-- [ ] 所有尝试和最终 Plan 可追踪。
-- [ ] 单元测试、Prompt 快照测试和 strict mypy 通过。
+- [x] `ExecutionPlanV1` 版本化且不破坏 V0 Plan。
+- [x] Planner 只能看到 ToolDescriptor，不能看到 Handler/SDK。
+- [x] Validator 在执行前拒绝未知、越权、非法参数和超预算计划。
+- [x] V0 Case 产生包含 Status、Events、Previous Logs、Deployment 的计划。
+- [x] 所有尝试和最终 Plan 可追踪。
+- [x] 单元测试、Prompt 快照测试和 strict mypy 通过。
+
+## 实施记录
+
+- 新增 `opspilot.planning`、`prompts/planner/v1.md` 与 [架构契约](../docs/architecture/planning-v1.md)。
+- `ValidatedPlanV1` 封存规范 JSON，避免验证后修改嵌套参数；AgentState 通过可选 V1 字段保留 V0 反序列化兼容。
+- Planner 使用显式 `run_id` 将成功、Schema 失败及语义拒绝尝试写入既有 `llm_calls`；危险计划只记录稳定错误和安全摘要。
+- 单元测试覆盖风险、范围、预算、重复调用、重生成与旧状态兼容；SQLite 集成测试验证按 Run 查询全部模型尝试。

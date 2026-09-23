@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 MAX_PLAN_STEPS = 8
 
@@ -80,6 +80,31 @@ class Plan(StrictSchema):
         expected = list(range(1, len(self.steps) + 1))
         if step_ids != expected:
             raise ValueError("plan step_id values must be sequential and start at 1")
+        return self
+
+
+class ExecutableStepV1(StrictSchema):
+    """A V1 declaration of one explicit, JSON-only tool invocation."""
+
+    step_id: int = Field(ge=1)
+    call_id: str = Field(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9_-]{2,127}$")
+    tool: str = Field(min_length=3, max_length=128, pattern=_TOOL_NAME_PATTERN)
+    arguments: dict[str, JsonValue]
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class ExecutionPlanV1(StrictSchema):
+    """Versioned executable plan, separate from the frozen V0 Plan."""
+
+    schema_version: Literal[1]
+    steps: tuple[ExecutableStepV1, ...] = Field(min_length=1, max_length=MAX_PLAN_STEPS)
+
+    @model_validator(mode="after")
+    def validate_steps(self) -> ExecutionPlanV1:
+        if [step.step_id for step in self.steps] != list(range(1, len(self.steps) + 1)):
+            raise ValueError("plan step_id values must be sequential and start at 1")
+        if len({step.call_id for step in self.steps}) != len(self.steps):
+            raise ValueError("plan call_id values must be unique")
         return self
 
 

@@ -7,7 +7,7 @@ import httpx
 import pytest
 from openai import APITimeoutError, BadRequestError, RateLimitError
 
-from opspilot.agent.schemas import StrictSchema
+from opspilot.agent.schemas import ExecutionPlanV1, StrictSchema
 from opspilot.llm import (
     ModelContextError,
     ModelConfigurationError,
@@ -86,6 +86,33 @@ def test_openai_adapter_returns_shared_contract_and_never_stores_response() -> N
     assert responses.calls[0]["store"] is False
     assert responses.calls[0]["timeout"] == 12
     assert responses.calls[0]["temperature"] == 0
+
+
+def test_openai_adapter_validates_json_array_steps_in_plan_fallback() -> None:
+    responses = FakeResponses(
+        SimpleNamespace(
+            output_parsed={
+                "schema_version": 1,
+                "steps": [
+                    {
+                        "step_id": 1,
+                        "call_id": "call_001",
+                        "tool": "k8s.get_pod_status",
+                        "arguments": {"namespace": "team-a", "pod_name": "api"},
+                        "reason": "Read status",
+                    }
+                ],
+            },
+            usage=SimpleNamespace(input_tokens=1, output_tokens=2),
+            id="resp_002",
+            model="configured-model",
+        )
+    )
+    result = asyncio.run(
+        OpenAIStructuredModelClient(responses).complete(_request(), ExecutionPlanV1)
+    )
+    assert result.output.steps[0].call_id == "call_001"
+    assert responses.calls[0]["text_format"] is ExecutionPlanV1
 
 
 def _request_and_response(status_code: int) -> tuple[httpx.Request, httpx.Response]:

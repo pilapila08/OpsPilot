@@ -9,7 +9,13 @@ from typing import ClassVar
 
 from pydantic import Field, field_validator, model_validator
 
-from opspilot.agent.schemas import BudgetState, IntentOutput, Plan, StrictSchema
+from opspilot.agent.schemas import (
+    BudgetState,
+    ExecutionPlanV1,
+    IntentOutput,
+    Plan,
+    StrictSchema,
+)
 
 _ID_PATTERN = r"^[a-z][a-z0-9_-]{2,127}$"
 
@@ -126,6 +132,7 @@ class AgentState(StrictSchema):
     user_query: str = Field(min_length=1, max_length=4_000)
     intent: IntentOutput | None = None
     plan: Plan | None = None
+    execution_plan_v1: ExecutionPlanV1 | None = None
     current_step: int = Field(default=0, ge=0)
     tool_call_ids: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
@@ -148,11 +155,31 @@ class AgentState(StrictSchema):
     def validate_state_snapshot(self) -> AgentState:
         if self.updated_at < self.created_at:
             raise ValueError("updated_at cannot be earlier than created_at")
-        if self.plan is None and self.current_step != 0:
+        if self.plan is not None and self.execution_plan_v1 is not None:
+            raise ValueError("V0 and V1 plans cannot coexist")
+        active_plan = self.execution_plan_v1 or self.plan
+        if active_plan is None and self.current_step != 0:
             raise ValueError("current_step must be 0 when no plan exists")
-        if self.plan is not None and self.current_step > len(self.plan.steps):
+        if active_plan is not None and self.current_step > len(active_plan.steps):
             raise ValueError("current_step cannot exceed the plan length")
         return self
+
+    def with_execution_plan(self, plan: ExecutionPlanV1, budget: BudgetState) -> AgentState:
+        """Attach a validated V1 plan while preserving the V0 plan field."""
+
+        if (
+            self.status is not AgentStatus.PLANNING
+            or self.plan is not None
+            or self.execution_plan_v1 is not None
+        ):
+            raise InvalidStateTransition("V1 plan requires PLANNING without a V0 plan")
+        return AgentState.model_validate(
+            {
+                **self.model_dump(mode="python"),
+                "execution_plan_v1": plan,
+                "budget": budget,
+            }
+        )
 
     def transition_to(
         self,
@@ -186,4 +213,3 @@ class AgentState(StrictSchema):
                 "transitions": (*self.transitions, event),
             }
         )
-

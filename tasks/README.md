@@ -12,8 +12,8 @@
 | V1-001 | [Kubernetes Client Boundary 与目标解析](V1-001-kubernetes-client-boundary.md) | Done | V0-001、V0-002、V0-003 |
 | V1-002 | [五个只读 Kubernetes Tool](V1-002-five-readonly-kubernetes-tools.md) | Done | V1-001 |
 | V1-003 | [Structured Model Gateway 与 Intent Router](V1-003-model-gateway-and-router.md) | Done | V0-001、V0-003、V0-004 |
-| V1-004 | [Planner 与 Plan Validator](V1-004-planner-and-plan-validator.md) | Ready | V1-002、V1-003 |
-| V1-005 | [Bounded Executor、Evidence Extraction 与持久化](V1-005-executor-evidence-persistence.md) | Planned | V0-004、V1-002、V1-004 |
+| V1-004 | [Planner 与 Plan Validator](V1-004-planner-and-plan-validator.md) | Done | V1-002、V1-003 |
+| V1-005 | [Bounded Executor、Evidence Extraction 与持久化](V1-005-executor-evidence-persistence.md) | Ready | V0-004、V1-002、V1-004 |
 | V1-006 | [CrashLoopBackOff Diagnosis 与基础 Verifier](V1-006-crashloop-diagnosis-verifier.md) | Planned | V1-003、V1-005 |
 | V1-007 | [Runtime Orchestration 与 Offline E2E](V1-007-runtime-orchestration-offline-e2e.md) | Planned | V1-004、V1-005、V1-006 |
 | V1-008 | [FastAPI、Live Smoke Test 与 V1 验收](V1-008-fastapi-live-acceptance.md) | Planned | V1-007 |

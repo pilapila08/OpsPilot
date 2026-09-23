@@ -3,12 +3,16 @@ from collections.abc import Iterator
 from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
+from typing import cast
 
 import pytest
+from pydantic import JsonValue
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from opspilot.agent import BudgetState
+from opspilot.agent import BudgetState, IntentOutput, Target
+from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.integrations.kubernetes import KubernetesReader
 from opspilot.llm import (
     ModelAuditError,
     PromptTemplate,
@@ -18,6 +22,8 @@ from opspilot.llm import (
     load_prompt,
 )
 from opspilot.routing import IntentRouter
+from opspilot.planning import PlanValidator, V1Planner
+from opspilot.tools.kubernetes import build_kubernetes_registry
 from opspilot.storage import (
     AgentRunRecord,
     Base,
@@ -149,3 +155,56 @@ def test_prompt_version_cannot_change_content_in_place(
 
     with pytest.raises(ModelAuditError, match="different content"):
         repository.register_prompt(changed)
+
+
+def test_planner_persists_rejected_and_accepted_attempts_for_same_run(session: Session) -> None:
+    pod: dict[str, JsonValue] = {"namespace": "opspilot-fixtures", "workload_name": "slow-start-api"}
+    steps: list[dict[str, JsonValue]] = [
+        {"step_id": 1, "call_id": "call_status", "tool": "k8s.get_pod_status", "arguments": pod, "reason": "Read status"},
+        {"step_id": 2, "call_id": "call_events", "tool": "k8s.get_pod_events", "arguments": pod, "reason": "Read events"},
+        {"step_id": 3, "call_id": "call_previous", "tool": "k8s.get_previous_logs", "arguments": pod, "reason": "Read logs"},
+        {"step_id": 4, "call_id": "call_deployment", "tool": "k8s.get_deployment", "arguments": {"namespace": "opspilot-fixtures", "deployment_name": "slow-start-api"}, "reason": "Read probes"},
+    ]
+    invalid = [{**steps[0], "tool": "k8s.delete_pod"}, *steps[1:]]
+    client = ScriptedModelClient(
+        [
+            ScriptedModelResponse(payload=cast(dict[str, JsonValue], {"schema_version": 1, "steps": invalid})),
+            ScriptedModelResponse(payload=cast(dict[str, JsonValue], {"schema_version": 1, "steps": steps})),
+        ]
+    )
+    planner = V1Planner(
+        client=client,
+        audit_repository=SQLAlchemyModelAuditRepository(session),
+        prompt=load_prompt(ROOT / "prompts" / "planner" / "v1.md", component="planner", version="v1"),
+        model_config=StructuredModelConfig(provider="scripted", model="planner-test-model"),
+    )
+    state = AgentState(
+        task_id="task_001",
+        trace_id="trace_001",
+        user_query="Why does slow-start-api keep restarting?",
+        intent=IntentOutput(
+            intent="diagnose",
+            domain="kubernetes",
+            problem_type="pod_restart",
+            target=Target(namespace="opspilot-fixtures", resource="slow-start-api"),
+        ),
+        status=AgentStatus.PLANNING,
+    )
+    outcome = asyncio.run(
+        planner.plan(
+            run_id="run_001",
+            state=state,
+            validator=PlanValidator(build_kubernetes_registry(cast(KubernetesReader, object()))),
+        )
+    )
+    calls = session.scalars(select(LLMCallRecord).order_by(LLMCallRecord.sequence_no)).all()
+    assert [call.sequence_no for call in calls] == [1, 2]
+    assert [call.success for call in calls] == [False, True]
+    assert calls[0].error_code == "TOOL_NOT_FOUND"
+    assert calls[0].response_payload is not None
+    assert calls[0].response_payload["security_event"] is True
+    assert calls[1].prompt_version_id == calls[0].prompt_version_id
+    assert calls[1].response_payload is not None
+    assert calls[1].response_payload["step_count"] == 4
+    assert outcome.llm_call_ids == (calls[0].id, calls[1].id)
+    assert outcome.state.execution_plan_v1 is not None

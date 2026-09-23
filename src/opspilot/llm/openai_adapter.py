@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from decimal import Decimal, ROUND_HALF_UP
+import json
 import os
 from time import perf_counter
 from typing import Any, Protocol, cast
@@ -151,9 +152,9 @@ class OpenAIStructuredModelClient:
             output = (
                 parsed
                 if isinstance(parsed, output_model)
-                else output_model.model_validate(parsed, strict=True)
+                else output_model.model_validate_json(json.dumps(parsed), strict=True)
             )
-        except ValidationError:
+        except (TypeError, ValueError, ValidationError):
             raise ModelSchemaError(
                 "model output failed schema validation",
                 usage=usage,

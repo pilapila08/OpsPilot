@@ -1,9 +1,9 @@
 # Project Status
 
-- Updated: 2026-09-22
+- Updated: 2026-09-23
 - Current phase: V1 Agent MVP
-- Current task: `V1-004-planner-and-plan-validator`
-- Repository state: V0 已验收并冻结为 v0.1；V1-003 Structured Model Gateway 与 Intent Router 已完成
+- Current task: `V1-005-executor-evidence-persistence`
+- Repository state: V0 已验收并冻结为 v0.1；V1-004 Planner 与 Plan Validator 已完成
 
 ## 已完成
 
@@ -35,16 +35,20 @@
 - V1-003 完成：`StructuredModelClient`、`ScriptedModelClient` 与 OpenAI Responses Adapter 共用结构化结果契约，SDK 隐式重试关闭且凭据仅从环境读取。
 - Router Prompt 已版本化并绑定 SHA-256；显式 namespace 不进入模型输出 Schema，Schema regeneration 最多两次并消耗 Budget。
 - `SQLAlchemyModelAuditRepository` 复用冻结表记录每次成功/失败模型尝试，完整测试达到 186 项，strict mypy 通过。
+- V1-004 完成：`ExecutionPlanV1` 与 V0 Plan 独立，AgentState 兼容接收已验证执行计划；Planner 使用版本化 Prompt 和五个 Tool Descriptor 生成四步 Case 计划。
+- 纯确定性 Plan Validator 严格检查 Tool 白名单、Risk 0、准确输入模型、namespace/目标、重复调用和剩余预算；通过规范 JSON 封存已验证计划。
+- Schema 最多重生成两次，语义无效最多重生成一次；全部尝试写入 `llm_calls`，未知 Tool 和 Policy 拒绝留下安全事件摘要。
+- 全量 215 项测试通过，strict mypy 通过；V0 状态反序列化与既有 Router 路径保持兼容。
 
 ## 正在进行
 
-- `V1-004` 已 Ready：实现 Planner 与 Plan Validator。
+- `V1-005` 已 Ready：实现 Bounded Executor、Evidence Extraction 与持久化。
 
 ## 下一步
 
-1. 完成 `V1-004`：Planner 与 Plan Validator。
-2. 完成 `V1-005`：Bounded Executor、Evidence Extraction 与持久化。
-3. 完成 `V1-006`：CrashLoopBackOff Diagnosis 与基础 Verifier。
+1. 完成 `V1-005`：Bounded Executor、Evidence Extraction 与持久化。
+2. 完成 `V1-006`：CrashLoopBackOff Diagnosis 与基础 Verifier。
+3. 完成 `V1-007`：Runtime Orchestration 与 Offline E2E。
 
 ## 已知风险与待决问题
 

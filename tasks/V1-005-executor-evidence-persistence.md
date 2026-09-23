@@ -1,6 +1,6 @@
 # V1-005: Bounded Executor、Evidence Extraction 与持久化
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V0-004, V1-002, V1-004
 

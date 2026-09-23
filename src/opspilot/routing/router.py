@@ -20,6 +20,7 @@ from opspilot.llm.audit import (
     ModelAuditRepository,
     ModelCallAttempt,
 )
+from opspilot.llm.budget import consume_retry, consume_usage, ensure_model_budget
 from opspilot.llm.client import StructuredModelClient
 from opspilot.llm.errors import (
     ModelBudgetError,
@@ -94,7 +95,7 @@ class IntentRouter:
         *,
         budget: BudgetState,
     ) -> RouterOutcome:
-        _ensure_model_budget(budget)
+        ensure_model_budget(budget)
         try:
             prompt_version_id = self._audit.register_prompt(self._prompt)
         except ModelAuditError:
@@ -107,7 +108,7 @@ class IntentRouter:
         current_budget = budget
 
         for attempt_index in range(self._settings.max_schema_retries + 1):
-            _ensure_model_budget(current_budget)
+            ensure_model_budget(current_budget)
             request = StructuredModelRequest(
                 messages=tuple(messages),
                 prompt=PromptReference.from_template(self._prompt),
@@ -145,7 +146,7 @@ class IntentRouter:
                     error=exc,
                 )
                 call_ids.append(recorded)
-                current_budget = _consume_usage(
+                current_budget = consume_usage(
                     current_budget,
                     usage=usage,
                     latency_ms=latency_ms,
@@ -161,7 +162,7 @@ class IntentRouter:
                     raise ModelBudgetError(
                         "schema regeneration retry budget is exhausted"
                     ) from None
-                current_budget = _consume_retry(current_budget)
+                current_budget = consume_retry(current_budget)
                 messages.append(
                     ModelMessage(
                         role=ModelRole.DEVELOPER,
@@ -184,7 +185,7 @@ class IntentRouter:
                 error=None,
             )
             call_ids.append(recorded)
-            current_budget = _consume_usage(
+            current_budget = consume_usage(
                 current_budget,
                 usage=result.metadata.usage,
                 latency_ms=result.metadata.latency_ms,
@@ -299,39 +300,4 @@ def _apply_scope(
             namespace=router_input.namespace,
             resource=output.resource,
         ),
-    )
-
-
-def _ensure_model_budget(budget: BudgetState) -> None:
-    exhausted = set(budget.exhausted_dimensions)
-    if exhausted & {"tokens", "cost", "time"}:
-        raise ModelBudgetError("model call budget is exhausted")
-
-
-def _consume_usage(
-    budget: BudgetState,
-    *,
-    usage: ModelUsage,
-    latency_ms: int,
-) -> BudgetState:
-    return BudgetState(
-        limits=budget.limits,
-        steps_used=budget.steps_used,
-        tool_calls_used=budget.tool_calls_used,
-        retries_used=budget.retries_used,
-        tokens_used=budget.tokens_used + usage.total_tokens,
-        cost_usd=budget.cost_usd + usage.cost_usd,
-        elapsed_seconds=budget.elapsed_seconds + latency_ms / 1_000,
-    )
-
-
-def _consume_retry(budget: BudgetState) -> BudgetState:
-    return BudgetState(
-        limits=budget.limits,
-        steps_used=budget.steps_used,
-        tool_calls_used=budget.tool_calls_used,
-        retries_used=budget.retries_used + 1,
-        tokens_used=budget.tokens_used,
-        cost_usd=budget.cost_usd,
-        elapsed_seconds=budget.elapsed_seconds,
     )

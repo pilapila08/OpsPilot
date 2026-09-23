@@ -4,6 +4,8 @@ from opspilot.agent.schemas import (
     MAX_PLAN_STEPS,
     BudgetLimits,
     BudgetState,
+    ExecutableStepV1,
+    ExecutionPlanV1,
     IntentOutput,
     Plan,
     PlanStep,
@@ -22,6 +24,8 @@ __all__ = [
     "AgentStatus",
     "BudgetLimits",
     "BudgetState",
+    "ExecutableStepV1",
+    "ExecutionPlanV1",
     "IntentOutput",
     "InvalidStateTransition",
     "Plan",
@@ -29,4 +33,3 @@ __all__ = [
     "StateTransition",
     "Target",
 ]
-
