@@ -1,6 +1,6 @@
 # V1-006: CrashLoopBackOff Diagnosis 与基础 Verifier
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V1-003, V1-005
 
@@ -15,6 +15,7 @@
 - `fixtures/cases/crashloop-liveness-v1/case.json`
 - `docs/architecture/v0-contract-baseline.md`
 - `docs/architecture/execution-v1.md`
+- `docs/architecture/diagnosis-v1.md`
 
 ## 架构位置
 
@@ -106,10 +107,18 @@ Recommendation 必须与验证事实一致，可建议：
 
 ## 验收条件
 
-- [ ] 候选诊断只能引用当前 Trace 的现有 Evidence。
-- [ ] 四类 required signal 全部满足时输出 COMPLETED。
-- [ ] 缺失或冲突时输出 PARTIAL，并明确 MissingEvidence/Contradiction。
-- [ ] Ground Truth Case 得到预期 Root Cause、Evidence 和 Recommendation。
-- [ ] Recommendation 不包含写操作或任意命令。
-- [ ] Result 与 Verification 持久化并可按 Trace 查询。
-- [ ] 单元测试、Case 参数化测试和 strict mypy 通过。
+- [x] 候选诊断只能引用当前 Trace 的现有 Evidence。
+- [x] 四类 required signal 全部满足时输出 COMPLETED。
+- [x] 缺失或冲突时输出 PARTIAL，并明确 MissingEvidence/Contradiction。
+- [x] Ground Truth Case 得到预期 Root Cause、Evidence 和 Recommendation。
+- [x] Recommendation 不包含写操作或任意命令。
+- [x] Result 与 Verification 持久化并可按 Trace 查询。
+- [x] 单元测试、Case 参数化测试和 strict mypy 通过。
+
+## 实施记录
+
+- 新增 `DiagnosisDraftV1`、受预算与审计约束的 `V1DiagnosisAssembler` 和纯确定性 `BasicCrashLoopVerifier`。候选引用必须属于当前 Trace；最终文本与置信度由规则生成，不信任模型推断。
+- 四类信号和探针时间窗从 Evidence 属性计算。缺失、冲突和未完成执行只能产生 Partial；无 Evidence 时沿用冻结 V0 Verification 边界，由 V1-007 处理失败终态。
+- Result/Verification 通过现有仓储持久化并支持按 Trace 查询；V0 Case 的真实 Tool 回放能产生预期 Ground Truth 结论，且不修改 Evidence。
+- 修复 Evidence 布尔属性的 JSON/SQL 往返保真，并补充回归测试。
+- 全量 252 项测试、103 个源文件 strict mypy 通过。

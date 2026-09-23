@@ -19,7 +19,7 @@ _SOURCE_PATTERN = r"^[a-z][a-z0-9_-]{0,63}$"
 _RESOURCE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}$"
 _ATTRIBUTE_KEY_PATTERN = r"^[a-z][a-z0-9_.-]{0,63}$"
 
-EvidenceScalar = str | int | float | bool | None
+EvidenceScalar = bool | int | float | str | None
 
 
 def _unique(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:

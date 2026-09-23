@@ -1,0 +1,1 @@
+"""Diagnosis integration tests."""

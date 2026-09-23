@@ -134,6 +134,12 @@ class SQLAlchemyRuntimeRepository:
             }
         )
 
+    def get_result_for_trace(self, trace_id: str) -> ResultSnapshot | None:
+        run_id = self._session.scalar(
+            select(AgentRunRecord.id).where(AgentRunRecord.trace_id == trace_id)
+        )
+        return self.get_result(run_id) if run_id is not None else None
+
     def _commit(self) -> None:
         try:
             self._session.commit()
@@ -183,3 +189,9 @@ class InMemoryRuntimeRepository:
 
     def get_result(self, run_id: str) -> ResultSnapshot | None:
         return self.results.get(run_id)
+
+    def get_result_for_trace(self, trace_id: str) -> ResultSnapshot | None:
+        for run in self.runs.values():
+            if run.state.trace_id == trace_id:
+                return self.results.get(run.run_id)
+        return None

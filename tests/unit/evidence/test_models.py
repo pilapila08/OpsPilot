@@ -45,6 +45,15 @@ def test_evidence_round_trips_with_traceability_fields() -> None:
     assert restored.raw_result_ref == "result_001"
 
 
+def test_boolean_evidence_attribute_survives_json_round_trip() -> None:
+    evidence = make_evidence(
+        attributes=(EvidenceAttribute(key="startup_probe_configured", value=False),)
+    )
+    restored = Evidence.model_validate_json(evidence.model_dump_json())
+
+    assert restored.attributes[0].value is False
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

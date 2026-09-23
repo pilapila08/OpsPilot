@@ -213,6 +213,17 @@ def _deployment(data: DeploymentOutput, collected_at: datetime) -> tuple[_Observ
         probe = container.liveness_probe
         if probe is None:
             continue
+        attributes = [
+            EvidenceAttribute(key="initial_delay_seconds", value=probe.initial_delay_seconds),
+            EvidenceAttribute(key="period_seconds", value=probe.period_seconds),
+            EvidenceAttribute(key="failure_threshold", value=probe.failure_threshold),
+            EvidenceAttribute(key="startup_probe_configured", value=container.startup_probe is not None),
+        ]
+        if container.startup_probe is not None:
+            attributes.extend((
+                EvidenceAttribute(key="startup_probe_period_seconds", value=container.startup_probe.period_seconds),
+                EvidenceAttribute(key="startup_probe_failure_threshold", value=container.startup_probe.failure_threshold),
+            ))
         observations.append(
             _Observation(
                 source="kubernetes_deployment",
@@ -225,12 +236,7 @@ def _deployment(data: DeploymentOutput, collected_at: datetime) -> tuple[_Observ
                     f"{probe.failure_threshold}; startup probe configured: "
                     f"{container.startup_probe is not None}."
                 ),
-                attributes=(
-                    EvidenceAttribute(key="initial_delay_seconds", value=probe.initial_delay_seconds),
-                    EvidenceAttribute(key="period_seconds", value=probe.period_seconds),
-                    EvidenceAttribute(key="failure_threshold", value=probe.failure_threshold),
-                    EvidenceAttribute(key="startup_probe_configured", value=container.startup_probe is not None),
-                ),
+                attributes=tuple(attributes),
             )
         )
     return tuple(observations)

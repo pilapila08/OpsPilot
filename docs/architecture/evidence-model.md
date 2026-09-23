@@ -33,6 +33,7 @@ Evidence 是诊断事实与其来源之间的可审计连接。最终 Claim 必�
 - Tool 的原始结果与 Evidence 摘要应分开保存，避免摘要覆盖原始事实。
 - `source_confidence`、`inference_confidence` 和 `verification_confidence` 必须区分。
 - Evidence 及其扩展属性创建后不可原地改写；纠正信息应生成新版本或新记录。
+- Evidence 属性中的布尔值必须在 JSON 与数据库往返后保持布尔类型，不能被当作数值 `0/1` 参与探针配置判断。
 - `observed_at` 与 `collected_at` 必须携带时区，且观察时间不得晚于采集时间。
 - `raw_result_ref` 可引用独立保存的原始 Tool Result；V0 不实现持久化。
 - Claim 至少包含 `text`、`evidence_ids` 和结论置信度。

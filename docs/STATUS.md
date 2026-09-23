@@ -2,8 +2,8 @@
 
 - Updated: 2026-09-23
 - Current phase: V1 Agent MVP
-- Current task: `V1-006-crashloop-diagnosis-verifier`（Ready）
-- Repository state: V0 已验收并冻结为 v0.1；V1-005 Bounded Executor 与 Evidence Persistence 已完成，尚未提交
+- Current task: `V1-007-runtime-orchestration-offline-e2e`（Ready）
+- Repository state: V0 已验收并冻结为 v0.1；V1-005 已提交并推送；V1-006 Diagnosis 与基础 Verifier 已完成，尚未提交
 
 ## 已完成
 
@@ -43,16 +43,19 @@
 - 新迁移保留 V0 首版迁移并扩展 logical call/attempt 字段，旧数据回填且具唯一约束；Tool Call 与 Evidence 以一次尝试为事务单元提交，按 Trace 可查询。
 - 五类 Kubernetes 响应有确定性 Evidence Extractor；V0 Case 真实 Handler 四步回放产生四类 required Evidence，不可信日志/Events 文本不进入证据摘要。
 - 全量 231 项测试通过，strict mypy 通过；迁移升级/回滚、旧数据、事务回滚、失败保留、重试预算与 Case 集成已验证。
+- V1-006 完成：`DiagnosisDraftV1`、审计化候选生成和确定性 CrashLoop Verifier 已实现；模型候选只能引用当前 Trace Evidence，最终事实、建议和置信度由规则决定。
+- Verifier 检查 Status、Liveness/重启 Events、Previous Logs 与 Deployment Probe 四类信号及时间窗；缺失、矛盾或执行未完成时持久化 Partial，禁止模型正确猜测越过证据门槛。
+- V0 Case 经真实只读 Tool、Executor、Evidence Extractor、候选模型与 Verifier 回放后产生预期 Ground Truth，并可按 Trace 查回 Result/Verification；Evidence 未改写。
+- Evidence 布尔属性的 JSON/SQL 往返保真已修复。全量 252 项测试通过，strict mypy 覆盖 103 个源文件。
 
 ## 正在进行
 
-- `V1-006` 已 Ready：实现 CrashLoopBackOff Diagnosis 与基础 Verifier。
+- `V1-007` 已 Ready：组合 Runtime Orchestration 与 Offline E2E。
 
 ## 下一步
 
-1. 完成 `V1-006`：CrashLoopBackOff Diagnosis 与基础 Verifier。
-2. 完成 `V1-007`：Runtime Orchestration 与 Offline E2E。
-3. 完成 `V1-008`：FastAPI、Live Smoke Test 与 V1 验收。
+1. 完成 `V1-007`：Runtime Orchestration 与 Offline E2E。
+2. 完成 `V1-008`：FastAPI、Live Smoke Test 与 V1 验收。
 
 ## 已知风险与待决问题
 

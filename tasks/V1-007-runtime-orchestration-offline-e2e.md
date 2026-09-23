@@ -1,6 +1,6 @@
 # V1-007: Runtime Orchestration 与 Offline E2E
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V1-004, V1-005, V1-006
 
@@ -15,6 +15,7 @@
 - `docs/architecture/storage-model.md`
 - `fixtures/cases/crashloop-liveness-v1/`
 - `docs/architecture/v0-contract-baseline.md`
+- `docs/architecture/diagnosis-v1.md`
 
 ## Runtime 接口
 
