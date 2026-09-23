@@ -38,6 +38,7 @@ class BoundedExecutor:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         tool_attempt_id_factory: Callable[[], str] | None = None,
         evidence_id_factory: Callable[[], str] | None = None,
+        on_enter_executing: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._registry = registry
         self._repository = repository
@@ -47,6 +48,7 @@ class BoundedExecutor:
         self._sleep = sleep
         self._tool_attempt_id = tool_attempt_id_factory or (lambda: f"tool_{uuid4().hex}")
         self._evidence_id = evidence_id_factory or (lambda: f"ev_{uuid4().hex}")
+        self._on_enter_executing = on_enter_executing
 
     async def execute(
         self,
@@ -80,6 +82,8 @@ class BoundedExecutor:
             )
 
         executing = state.transition_to(AgentStatus.EXECUTING, at=self._clock())
+        if self._on_enter_executing is not None:
+            self._on_enter_executing(executing)
         start_monotonic = self._monotonic()
         base_elapsed = state.budget.elapsed_seconds
         budget = state.budget

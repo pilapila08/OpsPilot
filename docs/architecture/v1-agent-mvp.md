@@ -49,6 +49,7 @@ Structured Model 与 Router 的 V1 具体契约见 [Model Gateway and Intent Rou
 Planner、执行计划与校验边界见 [V1 Planner and Plan Validator](planning-v1.md)。
 Executor、重试、Evidence Extraction 和事务边界见 [V1 Bounded Execution and Evidence Persistence](execution-v1.md)。
 候选诊断、四类信号和确定性验证边界见 [V1 CrashLoop Diagnosis and Basic Verification](diagnosis-v1.md)。
+Runtime 阶段交接、预算终态和严格 Replay 见 [V1 Diagnosis Runtime and Offline Replay](runtime-v1.md)。
 
 ## 模块边界
 

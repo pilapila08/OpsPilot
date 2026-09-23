@@ -1,6 +1,6 @@
 # V1-007: Runtime Orchestration 与 Offline E2E
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V1-004, V1-005, V1-006
 
@@ -16,6 +16,7 @@
 - `fixtures/cases/crashloop-liveness-v1/`
 - `docs/architecture/v0-contract-baseline.md`
 - `docs/architecture/diagnosis-v1.md`
+- `docs/architecture/runtime-v1.md`
 
 ## Runtime 接口
 
@@ -102,10 +103,18 @@ V1 不实现进程崩溃后自动恢复；数据库必须留下可诊断状态�
 
 ## 验收条件
 
-- [ ] 单一 Runtime 入口完成 Router 到 Result 的全链路。
-- [ ] Offline Replay 与 Live 使用同一 Tool/Executor/Verifier 契约。
-- [ ] V0 Case 产生 COMPLETED 且诊断与 Ground Truth 对齐。
-- [ ] Partial 与失败路径保留完整状态、调用和已有 Evidence。
-- [ ] 数据库可按 Trace 重建全部阶段。
-- [ ] 预算耗尽后不会发生新的模型或 Tool 调用。
-- [ ] E2E、迁移回归和 strict mypy 通过。
+- [x] 单一 Runtime 入口完成 Router 到 Result 的全链路。
+- [x] Offline Replay 与 Live 使用同一 Tool/Executor/Verifier 契约。
+- [x] V0 Case 产生 COMPLETED 且诊断与 Ground Truth 对齐。
+- [x] Partial 与失败路径保留完整状态、调用和已有 Evidence。
+- [x] 数据库可按 Trace 重建全部阶段。
+- [x] 预算耗尽后不会发生新的模型或 Tool 调用。
+- [x] E2E、迁移回归和 strict mypy 通过。
+
+## 实施记录
+
+- `DiagnosisRuntime` 以依赖注入组合 Router、Planner、Validator、Executor、Assembler 和 Repository；Task/Run、每阶段 AgentState 及合法终态均持久化。
+- `ReplayRegistryFactory` 每次运行装配全新只读 Registry/Reader，严格核对 Case 的故障阶段顺序、call ID、Tool、namespace、Pod 与参数；恢复阶段不参与诊断。
+- Alembic SQLite 全链路得到三次 LLM Call、四次 Tool Call、四类 Evidence 与匹配 Ground Truth 的 COMPLETED Result；Live 模式用注入 Reader 复用同一 Runtime。
+- Router Schema 耗尽、未知 Tool、Replay 失配、Tool 重试预算、缺失 Previous Logs、Result 写入失败和双运行隔离都有 E2E 测试。预算耗尽且保留 Evidence 时只用确定性 Verifier 保存 Partial，不增加调用。
+- 全量 271 项测试、111 个源文件 strict mypy 通过。

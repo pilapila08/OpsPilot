@@ -10,15 +10,15 @@ from time import perf_counter
 from pydantic import JsonValue
 
 from opspilot.agent.state import AgentStatus
-from opspilot.diagnosis.models import DiagnosisDraftV1, DiagnosisOutcome
+from opspilot.diagnosis.models import DiagnosisAssessment, DiagnosisDraftV1, DiagnosisOutcome
 from opspilot.diagnosis.verifier import BasicCrashLoopVerifier, DiagnosisInputError
 from opspilot.errors import ErrorCode
-from opspilot.evidence.models import Evidence
+from opspilot.evidence.models import Claim, Evidence
 from opspilot.execution.models import ExecutionSummary
 from opspilot.llm.audit import ModelAuditError, ModelAuditRepository, ModelCallAttempt
 from opspilot.llm.budget import consume_retry, consume_usage, ensure_model_budget
 from opspilot.llm.client import StructuredModelClient
-from opspilot.llm.errors import ModelBudgetError, ModelExternalError, ModelGatewayError, ModelSchemaError
+from opspilot.llm.errors import ModelExternalError, ModelGatewayError, ModelSchemaError
 from opspilot.llm.models import (
     ModelMessage, ModelRole, ModelUsage, PromptReference, PromptTemplate,
     StructuredModelConfig, StructuredModelRequest,
@@ -66,18 +66,8 @@ class V1DiagnosisAssembler:
         execution: ExecutionSummary,
     ) -> DiagnosisOutcome:
         state = execution.state
-        if state.intent is None or state.status not in {AgentStatus.VERIFYING, AgentStatus.EXECUTING, AgentStatus.BUDGET_EXCEEDED}:
-            raise DiagnosisInputError("diagnosis requires an executed V1 plan and routed Intent")
-        run = self._runs.get_run(run_id)
-        if run is None or run.task_id != state.task_id or run.state.trace_id != state.trace_id:
-            raise DiagnosisInputError("diagnosis Run does not match the current Trace")
-        if state.evidence_ids != execution.evidence_ids:
-            raise DiagnosisInputError("execution summary differs from AgentState Evidence")
-        evidence = self._evidence.evidence_for_trace(state.trace_id)
-        if not evidence or {item.evidence_id for item in evidence} != set(execution.evidence_ids) or len(evidence) != len(execution.evidence_ids):
-            raise DiagnosisInputError("stored Evidence differs from the execution summary")
-        if any(item.trace_id != state.trace_id for item in evidence):
-            raise DiagnosisInputError("stored Evidence belongs to another Trace")
+        evidence = self._validated_evidence(run_id, execution)
+        assert state.intent is not None
         ensure_model_budget(state.budget)
         try:
             prompt_version_id = self._audit.register_prompt(self._prompt)
@@ -139,18 +129,80 @@ class V1DiagnosisAssembler:
                 target=state.intent.target,
                 execution_complete=execution.error is None and state.status is AgentStatus.VERIFYING,
             )
-            self._results.append_result(ResultSnapshot(
-                result_id=result_id, task_id=state.task_id, run_id=run_id,
-                status=assessment.status, root_cause=assessment.root_cause,
-                recommendation=assessment.recommendation, confidence=assessment.confidence,
-                claims_payload=(assessment.claim.model_dump(mode="json"),),
-                verification_payload=assessment.verification.model_dump(mode="json"),
-            ))
+            self._persist_assessment(run_id, result_id, state.task_id, assessment)
             return DiagnosisOutcome(
                 assessment=assessment, budget=budget,
                 llm_call_ids=tuple(call_ids), result_id=result_id,
             )
         raise ModelSchemaError("diagnosis output failed schema validation")
+
+    def partial_without_model(
+        self, *, run_id: str, result_id: str, execution: ExecutionSummary,
+    ) -> DiagnosisOutcome:
+        """Verify retained facts after budget exhaustion without another model call."""
+
+        state = execution.state
+        if state.status is not AgentStatus.BUDGET_EXCEEDED:
+            raise DiagnosisInputError("no-model Partial requires an exhausted run")
+        evidence = self._validated_evidence(run_id, execution)
+        assert state.intent is not None
+        draft = DiagnosisDraftV1(
+            schema_version=1,
+            root_cause="The execution budget ended before diagnosis completed.",
+            recommendation="Collect the missing observations before changing the workload.",
+            claims=(Claim(
+                claim_id=f"claim_{result_id}",
+                text="The observed restart requires further verification.",
+                evidence_ids=(evidence[0].evidence_id,),
+                inference_confidence=0,
+            ),),
+        )
+        assessment = self._verifier.verify(
+            draft=draft, evidence=evidence, trace_id=state.trace_id,
+            target=state.intent.target, execution_complete=False,
+        )
+        self._persist_assessment(run_id, result_id, state.task_id, assessment)
+        return DiagnosisOutcome(
+            assessment=assessment, budget=state.budget,
+            llm_call_ids=(), result_id=result_id,
+        )
+
+    def _validated_evidence(
+        self, run_id: str, execution: ExecutionSummary,
+    ) -> tuple[Evidence, ...]:
+        state = execution.state
+        if state.intent is None or state.status not in {
+            AgentStatus.VERIFYING, AgentStatus.EXECUTING,
+            AgentStatus.BUDGET_EXCEEDED,
+        }:
+            raise DiagnosisInputError("diagnosis requires an executed V1 plan and routed Intent")
+        run = self._runs.get_run(run_id)
+        if run is None or run.task_id != state.task_id or run.state.trace_id != state.trace_id:
+            raise DiagnosisInputError("diagnosis Run does not match the current Trace")
+        if state.evidence_ids != execution.evidence_ids:
+            raise DiagnosisInputError("execution summary differs from AgentState Evidence")
+        evidence = self._evidence.evidence_for_trace(state.trace_id)
+        if (
+            not evidence
+            or {item.evidence_id for item in evidence} != set(execution.evidence_ids)
+            or len(evidence) != len(execution.evidence_ids)
+        ):
+            raise DiagnosisInputError("stored Evidence differs from the execution summary")
+        if any(item.trace_id != state.trace_id for item in evidence):
+            raise DiagnosisInputError("stored Evidence belongs to another Trace")
+        return evidence
+
+    def _persist_assessment(
+        self, run_id: str, result_id: str, task_id: str,
+        assessment: DiagnosisAssessment,
+    ) -> None:
+        self._results.append_result(ResultSnapshot(
+            result_id=result_id, task_id=task_id, run_id=run_id,
+            status=assessment.status, root_cause=assessment.root_cause,
+            recommendation=assessment.recommendation, confidence=assessment.confidence,
+            claims_payload=(assessment.claim.model_dump(mode="json"),),
+            verification_payload=assessment.verification.model_dump(mode="json"),
+        ))
 
     def _append_attempt(
         self,

@@ -24,6 +24,10 @@ override those fields. A result with zero Evidence is not assembled because the
 frozen V0 `Verification` contract requires at least one checked Evidence ID;
 V1-007 handles that execution failure.
 
+After a budget terminal state with retained Evidence, V1-007 calls the
+Assembler's no-model Partial path. It uses the same deterministic Verifier
+and current-Trace checks but makes no new model call.
+
 ## Completion rule
 
 `COMPLETED` requires at least two relevant Evidence records, a fully completed

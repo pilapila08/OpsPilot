@@ -2,8 +2,8 @@
 
 - Updated: 2026-09-23
 - Current phase: V1 Agent MVP
-- Current task: `V1-007-runtime-orchestration-offline-e2e`（Ready）
-- Repository state: V0 已验收并冻结为 v0.1；V1-005 已提交并推送；V1-006 Diagnosis 与基础 Verifier 已完成，尚未提交
+- Current task: `V1-008-fastapi-live-acceptance`（Ready）
+- Repository state: V0 已验收并冻结为 v0.1；V1-006 已提交并推送；V1-007 Runtime Orchestration 与 Offline E2E 已完成，尚未提交
 
 ## 已完成
 
@@ -47,15 +47,18 @@
 - Verifier 检查 Status、Liveness/重启 Events、Previous Logs 与 Deployment Probe 四类信号及时间窗；缺失、矛盾或执行未完成时持久化 Partial，禁止模型正确猜测越过证据门槛。
 - V0 Case 经真实只读 Tool、Executor、Evidence Extractor、候选模型与 Verifier 回放后产生预期 Ground Truth，并可按 Trace 查回 Result/Verification；Evidence 未改写。
 - Evidence 布尔属性的 JSON/SQL 往返保真已修复。全量 252 项测试通过，strict mypy 覆盖 103 个源文件。
+- V1-007 完成：单一 `DiagnosisRuntime` 串联 Router、Planner、Plan Validator、Executor、Diagnosis Assembler 与 Verifier；Task/Run、阶段状态、预算和结果通过现有仓储落库。
+- 严格 Replay Adapter 从 V0 Case 构造全新只读 Registry/Reader，逐步验证 call ID、Tool、参数、namespace、Pod 和故障阶段顺序；Live 模式可替换 Reader 而复用 Runtime。
+- Alembic SQLite 离线 E2E 复现 Ground Truth，并按 Trace 查到三次模型调用、四次 Tool 调用、四类 Evidence 和 COMPLETED Result；Partial、预算、Policy、模型失败、Result 写入失败与重复运行隔离均已覆盖。
+- 预算终止且已有 Evidence 时不再调用模型或 Tool，仅运行确定性 Verifier 保存 PARTIAL Result；全量 271 项测试通过，strict mypy 覆盖 111 个源文件。
 
 ## 正在进行
 
-- `V1-007` 已 Ready：组合 Runtime Orchestration 与 Offline E2E。
+- `V1-008` 已 Ready：FastAPI、可选 Live Smoke Test 与 V1 阶段验收。
 
 ## 下一步
 
-1. 完成 `V1-007`：Runtime Orchestration 与 Offline E2E。
-2. 完成 `V1-008`：FastAPI、Live Smoke Test 与 V1 验收。
+1. 完成 `V1-008`：FastAPI、Live Smoke Test 与 V1 验收。
 
 ## 已知风险与待决问题
 

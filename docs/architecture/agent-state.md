@@ -50,6 +50,7 @@ POLICY_REJECTED
 - 状态快照不可变；转换返回一个包含 `StateTransition` 记录的新快照。
 - V0 使用 ID 引用尚未实现的 Tool Call、Evidence、Diagnosis 和 Verification 实体。
 - 超出预算时停止探索，可使用已有 Evidence 生成 `PARTIAL` 结果。
+- V1 中预算终止的 Run 状态保持 `BUDGET_EXCEEDED`；若已有 Evidence，可在不新增模型或 Tool 调用的情况下持久化状态为 `PARTIAL` 的诊断结果。
 - V1 不应进入需要真实写操作的审批执行流程；`WAITING_APPROVAL` 为后续阶段预留。
 
 ## 状态转换表

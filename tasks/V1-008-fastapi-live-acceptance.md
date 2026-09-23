@@ -1,6 +1,6 @@
 # V1-008: FastAPI、Live Smoke Test 与 V1 验收
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V1-007
 
@@ -15,6 +15,7 @@
 - `docs/architecture/storage-model.md`
 - `docs/architecture/kubernetes-tools-v1.md`
 - `fixtures/cases/crashloop-liveness-v1/README.md`
+- `docs/architecture/runtime-v1.md`
 
 ## API
 
