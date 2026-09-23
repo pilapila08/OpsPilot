@@ -62,6 +62,8 @@ class DiagnosisTaskRecord(Base):
     idempotency_key: Mapped[str | None] = mapped_column(
         String(128), unique=True
     )
+    mode: Mapped[str | None] = mapped_column(String(16))
+    case_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

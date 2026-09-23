@@ -16,6 +16,6 @@
 | V1-005 | [Bounded Executor、Evidence Extraction 与持久化](V1-005-executor-evidence-persistence.md) | Done | V0-004、V1-002、V1-004 |
 | V1-006 | [CrashLoopBackOff Diagnosis 与基础 Verifier](V1-006-crashloop-diagnosis-verifier.md) | Done | V1-003、V1-005 |
 | V1-007 | [Runtime Orchestration 与 Offline E2E](V1-007-runtime-orchestration-offline-e2e.md) | Done | V1-004、V1-005、V1-006 |
-| V1-008 | [FastAPI、Live Smoke Test 与 V1 验收](V1-008-fastapi-live-acceptance.md) | Ready | V1-007 |
+| V1-008 | [FastAPI、Live Smoke Test 与 V1 验收](V1-008-fastapi-live-acceptance.md) | Done | V1-007 |
 
 任务状态使用：`Planned`、`Ready`、`In Progress`、`Blocked`、`Done`。

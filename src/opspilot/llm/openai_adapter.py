@@ -20,8 +20,11 @@ from openai import (
     PermissionDeniedError,
     RateLimitError,
 )
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
+from opspilot.agent.schemas import ExecutionPlanV1
+from opspilot.diagnosis.models import DiagnosisDraftV1
+from opspilot.llm.strict_wire import StrictJsonEnvelope
 from opspilot.agent.schemas import StrictSchema
 from opspilot.llm.errors import (
     ModelConfigurationError,
@@ -99,10 +102,16 @@ class OpenAIStructuredModelClient:
             }
             for message in request.messages
         ]
+        wire_model = cast(
+            type[BaseModel],
+            StrictJsonEnvelope
+            if output_model in {ExecutionPlanV1, DiagnosisDraftV1}
+            else output_model,
+        )
         call_arguments: dict[str, Any] = {
             "model": request.config.model,
             "input": input_messages,
-            "text_format": output_model,
+            "text_format": wire_model,
             "max_output_tokens": request.config.max_output_tokens,
             "store": False,
             "timeout": request.config.timeout_seconds,
@@ -149,10 +158,17 @@ class OpenAIStructuredModelClient:
                 model_version=model_version,
             )
         try:
-            output = (
+            wire_output = (
                 parsed
-                if isinstance(parsed, output_model)
-                else output_model.model_validate_json(json.dumps(parsed), strict=True)
+                if isinstance(parsed, wire_model)
+                else wire_model.model_validate_json(json.dumps(parsed), strict=True)
+            )
+            output = (
+                output_model.model_validate_json(
+                    wire_output.payload_json, strict=True,
+                )
+                if isinstance(wire_output, StrictJsonEnvelope)
+                else wire_output
             )
         except (TypeError, ValueError, ValidationError):
             raise ModelSchemaError(
@@ -167,7 +183,7 @@ class OpenAIStructuredModelClient:
             response_id = None
 
         return StructuredModelResult[OutputT](
-            output=output,
+            output=cast(OutputT, output),
             metadata=ModelResponseMetadata(
                 provider="openai",
                 model=request.config.model,

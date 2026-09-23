@@ -6,6 +6,11 @@
 
 `ExecutionPlanV1` is independent of frozen V0 `Plan`: `schema_version=1`, one to eight sequential steps, unique call IDs, registered Tool names, JSON-only arguments and bounded reasons. `AgentState.execution_plan_v1` is an additive optional field; old state JSON without this field still loads. An accepted plan is attached only while the state is `PLANNING`.
 
+Live OpenAI calls use versioned `prompts/planner/v2.md`. The provider receives
+a flat strict wire envelope containing JSON text, which the Adapter parses back
+into this same `ExecutionPlanV1` before Planner admission. The v1 prompt and
+domain plan remain unchanged for scripted and Replay paths.
+
 ## Admission
 
 `PlanValidator` is synchronous and never invokes a Tool. It checks each step against the current Registry and the exact V1 input model for that Tool name. Only the five Kubernetes Tool names and `READ_ONLY` risk are allowed. Strict input validation rejects unknown fields, selectors, shell fields and type coercion. Namespace and resource must match the routed Intent. Calls with identical normalized Tool arguments are rejected, including duplicates hidden by default values.

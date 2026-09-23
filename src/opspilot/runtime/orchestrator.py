@@ -71,9 +71,25 @@ class DiagnosisRuntime:
         self._monotonic = monotonic_clock
         self._sleep = sleep
 
-    async def run(self, request: DiagnosisRequest) -> DiagnosisRunResult:
+    async def run(
+        self, request: DiagnosisRequest, *, task_id: str | None = None,
+    ) -> DiagnosisRunResult:
         started = self._monotonic()
-        task_id = self._ids.new("task")
+        if task_id is None:
+            task_id = self._ids.new("task")
+            self._tasks.create_task(TaskSnapshot(
+                task_id=task_id, user_query=request.query,
+                namespace=request.namespace, mode=request.mode, case_id=request.case_id,
+            ))
+        else:
+            prepared = self._tasks.get_task(task_id)
+            if (
+                prepared is None or prepared.status is not AgentStatus.CREATED
+                or prepared.user_query != request.query
+                or prepared.namespace != request.namespace
+                or prepared.mode != request.mode or prepared.case_id != request.case_id
+            ):
+                raise ValueError("prepared task does not match diagnosis request")
         run_id = self._ids.new("run")
         trace_id = self._ids.new("trace")
         now = self._clock()
@@ -82,10 +98,6 @@ class DiagnosisRuntime:
             budget=BudgetState(limits=self._limits),
             created_at=now, updated_at=now,
         )
-        self._tasks.create_task(TaskSnapshot(
-            task_id=task_id, user_query=request.query,
-            namespace=request.namespace,
-        ))
         self._runs.create_run(RunSnapshot(run_id=run_id, task_id=task_id, state=state))
 
         try:

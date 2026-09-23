@@ -1,6 +1,6 @@
 # V1-008: FastAPI、Live Smoke Test 与 V1 验收
 
-- Status: Ready
+- Status: Done (offline acceptance, Live diagnosis and recovery check all passed)
 - Phase: V1
 - Depends on: V1-007
 
@@ -124,10 +124,24 @@ V1 明确不保证进程崩溃后的队列恢复；遗留 RUNNING 任务可被�
 
 ## 验收条件
 
-- [ ] POST/GET API 使用严格 DTO 并与 ORM 分离。
-- [ ] Replay API 在无外部依赖环境完成端到端诊断。
-- [ ] 调度有并发与关闭边界，幂等请求不重复运行。
-- [ ] API 错误稳定且不泄漏内部数据。
-- [ ] 可选 Live smoke test 和操作文档可执行。
-- [ ] V1 原始验收项全部映射到自动测试或明确的人工检查。
-- [ ] 完整 pytest、strict mypy 和项目状态更新通过。
+- [x] POST/GET API 使用严格 DTO 并与 ORM 分离。
+- [x] Replay API 在无外部依赖环境完成端到端诊断。
+- [x] 调度有并发与关闭边界，幂等请求不重复运行。
+- [x] API 错误稳定且不泄漏内部数据。
+- [x] 可选 Live smoke test 和操作文档可执行；操作者于 2026-09-23 在真实集群运行 `pytest -m live`，1 passed（43.14s），五个只读 Tool 与完整 Live 诊断通过，`verification.supported=true`。
+- [x] 应用 fixed manifest 并将 workload 恢复到 Ready 与零重启，随后清理 fixture namespace；Agent 全程未执行集群写操作。
+- [x] V1 原始验收项全部映射到自动测试或明确的人工检查。
+- [x] 完整 pytest、strict mypy 和项目状态更新通过。
+
+## 完成记录
+
+- POST/GET、Case Replay、配置装配与有界 Dispatcher 已实现；Task 先落库，再执行现有 Runtime。
+- Additive Alembic 迁移保存 mode/case_id，原有 idempotency key 唯一约束配合请求一致性校验。
+- API 仅公开 Evidence ID、来源、资源和确定性 Verification，不公开原始 Tool 结果或 Prompt。
+- 自动验收见 `docs/roadmap/v1-acceptance.md`；首次 Live 在 kind 集群执行，五个只读 Tool 与 Router 真实调用通过，Planner 因 `ExecutionPlanV1` strict schema 不兼容被拒。该记录保留为历史失败。
+- ADR 0004 引入 OpenAI strict wire 封套，Live Planner/Diagnosis Prompt 版本升至 v2；本地 SDK Schema 与模拟 Live 全链路通过，首次失败记录保留为历史。
+- 后续真实 Live 暴露 Planner v2 字段提示、模型超时和 fixture 日志格式/退出时序问题，均已修正；Reader 修复前一次 Run 的 status 为 PARTIAL，Evidence 为 status×1、events×3、deployment×1、logs×0，`verification.missing_evidence` 仅缺 `startup_duration`，无 contradictions。
+- SDK 36.0.3 将日志响应 bytes 转成 `b'...'` 形式的字符串。Reader 改为 `_preload_content=False` 读取原始字节并解码；边界测试覆盖两行时间戳日志、读取上限和连接释放。全量 285 passed、1 skipped，mypy 122 个文件通过。
+- 2026-09-23 真实 Live smoke 复跑：1 passed，43.14s；五个只读 Tool 和 Live Runtime 完整诊断成功，`verification.supported=true`。
+- 修复侧核验：应用 `fixed-deployment.json` 后 rollout 成功，Pod `1/1 Running`、`Ready=True`、`restartCount=0`、`lastState={}`，90 秒后复检仍为 0，新 Pod 无 `Killing` 事件，唯一 `Startup probe failed` 事件在 50 秒预算内被容忍；与 Case 恢复 Ground Truth 一致。
+- fixture namespace 已删除，只读 ServiceAccount、Role、RoleBinding 与 token Secret 随 namespace 一并移除，残留资源检查为空。全部写操作由操作者身份执行，Agent 未持有写权限。

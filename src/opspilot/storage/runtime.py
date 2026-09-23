@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import JsonValue
 from sqlalchemy import select
@@ -38,9 +38,43 @@ class SQLAlchemyRuntimeRepository:
                 user_query=task.user_query,
                 namespace=task.namespace,
                 status=task.status.value,
+                mode=task.mode,
+                case_id=task.case_id,
+                idempotency_key=task.idempotency_key,
             )
         )
         self._commit()
+
+    def create_or_get_task(self, task: TaskSnapshot) -> tuple[TaskSnapshot, bool]:
+        if task.idempotency_key is not None:
+            existing = self._by_key(task.idempotency_key)
+            if existing is not None:
+                return _matching_task(existing, task), False
+        try:
+            self.create_task(task)
+        except RuntimePersistenceError:
+            if task.idempotency_key is None:
+                raise
+            existing = self._by_key(task.idempotency_key)
+            if existing is None:
+                raise
+            return _matching_task(existing, task), False
+        return task, True
+
+    def _by_key(self, key: str) -> TaskSnapshot | None:
+        task_id = self._session.scalar(
+            select(DiagnosisTaskRecord.id).where(DiagnosisTaskRecord.idempotency_key == key)
+        )
+        return self.get_task(task_id) if task_id is not None else None
+
+    def get_by_idempotency_key(self, key: str) -> TaskSnapshot | None:
+        return self._by_key(key)
+
+    def fail_unstarted_task(self, task_id: str) -> None:
+        row = self._session.get(DiagnosisTaskRecord, task_id)
+        if row is not None and row.status == AgentStatus.CREATED.value:
+            row.status = AgentStatus.FAILED.value
+            self._commit()
 
     def get_task(self, task_id: str) -> TaskSnapshot | None:
         row = self._session.get(DiagnosisTaskRecord, task_id)
@@ -51,6 +85,9 @@ class SQLAlchemyRuntimeRepository:
             user_query=row.user_query,
             namespace=row.namespace,
             status=AgentStatus(row.status),
+            mode=cast(Literal["live", "replay"] | None, row.mode),
+            case_id=row.case_id,
+            idempotency_key=row.idempotency_key,
         )
 
     def create_run(self, run: RunSnapshot) -> None:
@@ -161,6 +198,25 @@ class InMemoryRuntimeRepository:
             raise RuntimePersistenceError("task already exists")
         self.tasks[task.task_id] = task
 
+    def create_or_get_task(self, task: TaskSnapshot) -> tuple[TaskSnapshot, bool]:
+        if task.idempotency_key is not None:
+            for existing in self.tasks.values():
+                if existing.idempotency_key == task.idempotency_key:
+                    return _matching_task(existing, task), False
+        self.create_task(task)
+        return task, True
+
+    def get_by_idempotency_key(self, key: str) -> TaskSnapshot | None:
+        return next(
+            (item for item in self.tasks.values() if item.idempotency_key == key),
+            None,
+        )
+
+    def fail_unstarted_task(self, task_id: str) -> None:
+        task = self.tasks.get(task_id)
+        if task is not None and task.status is AgentStatus.CREATED:
+            self.tasks[task_id] = task.model_copy(update={"status": AgentStatus.FAILED})
+
     def get_task(self, task_id: str) -> TaskSnapshot | None:
         return self.tasks.get(task_id)
 
@@ -195,3 +251,14 @@ class InMemoryRuntimeRepository:
             if run.state.trace_id == trace_id:
                 return self.results.get(run.run_id)
         return None
+
+
+def _matching_task(existing: TaskSnapshot, requested: TaskSnapshot) -> TaskSnapshot:
+    if (
+        existing.user_query != requested.user_query
+        or existing.namespace != requested.namespace
+        or existing.mode != requested.mode
+        or existing.case_id != requested.case_id
+    ):
+        raise RuntimePersistenceError("idempotency key belongs to a different request")
+    return existing

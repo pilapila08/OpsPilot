@@ -1,19 +1,23 @@
 import asyncio
 from decimal import Decimal
+import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
 from openai import APITimeoutError, BadRequestError, RateLimitError
+from openai.lib._pydantic import to_strict_json_schema
 
 from opspilot.agent.schemas import ExecutionPlanV1, StrictSchema
+from opspilot.diagnosis.models import DiagnosisDraftV1
 from opspilot.llm import (
     ModelContextError,
     ModelConfigurationError,
     ModelExternalError,
     ModelMessage,
     ModelRateLimitError,
+    ModelSchemaError,
     ModelRole,
     ModelTimeoutError,
     OpenAIAdapterSettings,
@@ -23,6 +27,7 @@ from opspilot.llm import (
     StructuredModelRequest,
     build_openai_structured_client,
 )
+from opspilot.llm.strict_wire import StrictJsonEnvelope
 
 
 class SampleOutput(StrictSchema):
@@ -89,20 +94,21 @@ def test_openai_adapter_returns_shared_contract_and_never_stores_response() -> N
 
 
 def test_openai_adapter_validates_json_array_steps_in_plan_fallback() -> None:
+    plan = {
+        "schema_version": 1,
+        "steps": [
+            {
+                "step_id": 1,
+                "call_id": "call_001",
+                "tool": "k8s.get_pod_status",
+                "arguments": {"namespace": "team-a", "pod_name": "api"},
+                "reason": "Read status",
+            }
+        ],
+    }
     responses = FakeResponses(
         SimpleNamespace(
-            output_parsed={
-                "schema_version": 1,
-                "steps": [
-                    {
-                        "step_id": 1,
-                        "call_id": "call_001",
-                        "tool": "k8s.get_pod_status",
-                        "arguments": {"namespace": "team-a", "pod_name": "api"},
-                        "reason": "Read status",
-                    }
-                ],
-            },
+            output_parsed={"payload_json": json.dumps(plan)},
             usage=SimpleNamespace(input_tokens=1, output_tokens=2),
             id="resp_002",
             model="configured-model",
@@ -112,7 +118,66 @@ def test_openai_adapter_validates_json_array_steps_in_plan_fallback() -> None:
         OpenAIStructuredModelClient(responses).complete(_request(), ExecutionPlanV1)
     )
     assert result.output.steps[0].call_id == "call_001"
-    assert responses.calls[0]["text_format"] is ExecutionPlanV1
+    assert result.output.steps[0].arguments == {
+        "namespace": "team-a", "pod_name": "api",
+    }
+    assert responses.calls[0]["text_format"] is StrictJsonEnvelope
+
+
+def test_domain_wire_schema_is_strict_and_has_no_dynamic_object() -> None:
+    schema = to_strict_json_schema(StrictJsonEnvelope)
+    assert isinstance(schema, dict)
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False
+    properties = cast(dict[str, Any], schema["properties"])
+    assert isinstance(properties, dict)
+    assert schema["required"] == ["payload_json"]
+    payload = properties["payload_json"]
+    assert isinstance(payload, dict)
+    assert payload["type"] == "string"
+    assert "$defs" not in schema
+
+
+def test_invalid_plan_json_is_a_schema_error_with_usage() -> None:
+    responses = FakeResponses(
+        SimpleNamespace(
+            output_parsed={"payload_json": '{"schema_version":1,"steps":[]}'},
+            usage=SimpleNamespace(input_tokens=5, output_tokens=7),
+            id="resp_invalid",
+            model="configured-model",
+        )
+    )
+    with pytest.raises(ModelSchemaError) as caught:
+        asyncio.run(OpenAIStructuredModelClient(responses).complete(_request(), ExecutionPlanV1))
+    assert caught.value.usage is not None
+    assert caught.value.usage.total_tokens == 12
+
+
+def test_diagnosis_wire_decodes_to_domain_schema() -> None:
+    draft = {
+        "schema_version": 1,
+        "root_cause": "Early liveness probe",
+        "recommendation": "Add a startup probe",
+        "claims": [{
+            "claim_id": "claim_001",
+            "text": "Liveness interrupts startup",
+            "evidence_ids": ["ev_001"],
+            "inference_confidence": 0.5,
+        }],
+    }
+    responses = FakeResponses(
+        SimpleNamespace(
+            output_parsed={"payload_json": json.dumps(draft)},
+            usage=SimpleNamespace(input_tokens=5, output_tokens=7),
+            id="resp_diagnosis",
+            model="configured-model",
+        )
+    )
+    result = asyncio.run(
+        OpenAIStructuredModelClient(responses).complete(_request(), DiagnosisDraftV1)
+    )
+    assert result.output.claims[0].evidence_ids == ("ev_001",)
+    assert responses.calls[0]["text_format"] is StrictJsonEnvelope
 
 
 def _request_and_response(status_code: int) -> tuple[httpx.Request, httpx.Response]:

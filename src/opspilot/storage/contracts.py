@@ -26,6 +26,9 @@ class TaskSnapshot(StrictSchema):
     user_query: str = Field(min_length=1, max_length=4_000)
     namespace: NamespaceName | None = None
     status: AgentStatus = AgentStatus.CREATED
+    mode: Literal["live", "replay"] | None = None
+    case_id: str | None = None
+    idempotency_key: str | None = None
 
 
 class RunSnapshot(StrictSchema):
@@ -57,6 +60,12 @@ class ResultSnapshot(StrictSchema):
 @runtime_checkable
 class TaskRepository(Protocol):
     def create_task(self, task: TaskSnapshot) -> None: ...
+
+    def create_or_get_task(self, task: TaskSnapshot) -> tuple[TaskSnapshot, bool]: ...
+
+    def get_by_idempotency_key(self, key: str) -> TaskSnapshot | None: ...
+
+    def fail_unstarted_task(self, task_id: str) -> None: ...
 
     def get_task(self, task_id: str) -> TaskSnapshot | None: ...
 

@@ -17,6 +17,6 @@
 V0 -> V1 -> V2 -> V3 -> V4 -> V5
 ```
 
-V0 已通过[阶段验收](v0-acceptance.md)，`v0.1` 契约基线已经冻结。V1 已拆分为 8 个工作单，当前从 `V1-001` Kubernetes Client Boundary 开始；仍不提前引入 RAG、MCP、Multi-Agent、写操作或完整 React 前端。
+V0 已通过[阶段验收](v0-acceptance.md)，`v0.1` 契约基线已经冻结。V1 八个工作单的离线自动验收、真实集群 Live 诊断及 fixed manifest 的 Ready/零重启核验与 fixture 清理均已完成，详见[V1 验收报告](v1-acceptance.md)。V1-008 已标记 Done，下一步拆分 V2 工作单；Live smoke 成功不代表 V1 API 可公开部署。
 
 详细阶段需求以根目录 `OpsPilot_六阶段技术设计文档.md` 为原始参考；实施中的最新事实以工作单、架构协议、ADR 和测试为准。

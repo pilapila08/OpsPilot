@@ -1,9 +1,9 @@
 # Project Status
 
 - Updated: 2026-09-23
-- Current phase: V1 Agent MVP
-- Current task: `V1-008-fastapi-live-acceptance`（Ready）
-- Repository state: V0 已验收并冻结为 v0.1；V1-006 已提交并推送；V1-007 Runtime Orchestration 与 Offline E2E 已完成，尚未提交
+- Current phase: V1 Agent MVP（Offline 与 Live 均通过；故障到恢复闭环已在真实集群完整验证）
+- Current task: `V1-008-fastapi-live-acceptance`（Done）
+- Repository state: V0 已验收并冻结为 v0.1；V1-008 已完成验收，包含真实 Live 发现的 Schema 与日志边界修复
 
 ## 已完成
 
@@ -51,22 +51,32 @@
 - 严格 Replay Adapter 从 V0 Case 构造全新只读 Registry/Reader，逐步验证 call ID、Tool、参数、namespace、Pod 和故障阶段顺序；Live 模式可替换 Reader 而复用 Runtime。
 - Alembic SQLite 离线 E2E 复现 Ground Truth，并按 Trace 查到三次模型调用、四次 Tool 调用、四类 Evidence 和 COMPLETED Result；Partial、预算、Policy、模型失败、Result 写入失败与重复运行隔离均已覆盖。
 - 预算终止且已有 Evidence 时不再调用模型或 Tool，仅运行确定性 Verifier 保存 PARTIAL Result；全量 271 项测试通过，strict mypy 覆盖 111 个源文件。
+- V1-008 API 主体已实现：FastAPI POST/GET 以严格 DTO 创建与查询诊断；有界 in-process Dispatcher 先持久化 Task，再运行同一 Runtime，支持幂等 key、容量拒绝与有界关闭。
+- Replay API 无模型凭据/集群即可端到端返回 Root Cause、四类 Evidence、Recommendation 和 Verification；Live 显式配置与只读 Reader，不静默回退。
+- 新增可选 Live smoke test 和操作文档；真实集群手工验证五个只读 Tool 成功。首次 Planner strict schema 被拒；Reader 修复前一次 Runtime 已完成三次模型和四次 Tool 调用，但因日志被 SDK 变成 bytes repr 而输出 PARTIAL。两处阻断修复后，Live 诊断与修复侧核验均已通过，详见 `docs/roadmap/v1-acceptance.md`。
+- API 的 COMPLETED、PARTIAL、FAILED、BUDGET_EXCEEDED 与 POLICY_REJECTED 表达均有测试；对外错误仅用固定文案，模型内部文本不泄漏。全量 280 项测试通过、1 项 Live 测试跳过，strict mypy 覆盖 121 个源文件。
+- Strict wire 修复后本地全量 284 项测试通过、1 项真实 Live 测试跳过，strict mypy 覆盖 122 个源文件；模拟 Live API 已经过 v2 Planner/Diagnosis、只读 Tool 和 Verifier 产出 COMPLETED。
+- Kubernetes Reader 改为以 `_preload_content=False` 读取限量原始日志字节并 UTF-8 解码，避免 SDK 将 bytes 转为 `b'...'` 字符串；边界测试验证真实换行、限量读取和连接释放。最新全量 285 项测试通过、1 项真实 Live 测试跳过，strict mypy 覆盖 122 个源文件。
+- 2026-09-23 在已配置的真实集群环境独立复跑 `pytest -m live`：1 passed（43.14s）。五个只读 Tool 与 Live Runtime 端到端诊断通过，最终 `verification.supported=true`。默认离线 285 passed、1 skipped，strict mypy 122 文件通过。
+- 2026-09-23 修复侧核验完成：应用 `fixed-deployment.json` 后 rollout 成功，Pod `1/1 Running`、`Ready=True`、`restartCount=0`、`lastState={}`，90 秒后复检仍为 0；新 Pod 无 `Killing` 事件，唯一 `Startup probe failed` 在 40 秒预算内被容忍。结果与 Case 恢复 Ground Truth（Running/ready/max_restart_count 0）一致。
+- fixture namespace 已清理，只读 ServiceAccount、Role、RoleBinding 与 token Secret 随之删除，残留资源检查为空。
 
 ## 正在进行
 
-- `V1-008` 已 Ready：FastAPI、可选 Live Smoke Test 与 V1 阶段验收。
+- 无。V1-008 已完成：离线验收、真实集群 Live 诊断、修复侧核验与清理全部通过。
 
 ## 下一步
 
-1. 完成 `V1-008`：FastAPI、Live Smoke Test 与 V1 验收。
+1. 拆分 V2 工作单，保持 V1 只读边界。
 
 ## 已知风险与待决问题
 
 - V1 只支持单副本 Deployment 到单 Pod 的确定性解析；多副本和滚动发布选择留到 V2。
 - Evidence 原始结果的存储格式、压缩和保留周期尚未确定。
-- OpenAI Live Adapter 已实现但尚未使用真实 API key 执行 smoke test；Model Gateway 保持 provider-neutral。
-- 真实 Kubernetes 只读 smoke test 尚未执行，V1 默认验收先依赖 Offline Replay。
+- 首次 `ExecutionPlanV1` strict Schema 被真实端点拒收；ADR 0004 已改为扁平封套。后续真实运行已成功完成 Planner 和 Diagnosis，因此此项不再是当前阻断；官方 OpenAI 端点未直接验证。
+- SDK 36.0.3 曾将 Previous Logs 字节变成 `repr` 字符串，导致缺少日志 Evidence；Reader 原始字节解码修复后，真实 Live smoke 已通过。外部边界的真实响应形态仍需持续保留专门回归测试。
+- V1 API 无认证且进程内队列不提供崩溃恢复，Live smoke 成功不等于可以公开部署或声明生产可用。
 
 ## 阻塞项
 
-当前无阻塞项。
+当前无阻塞项。V1-008 的修复侧核验与清理已完成，`docs/roadmap/v1-acceptance.md` 已登记真实结果。

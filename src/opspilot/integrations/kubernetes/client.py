@@ -155,15 +155,31 @@ class KubernetesSdkReader:
             kwargs["since_seconds"] = since_seconds
 
         result = await self._call(
-            self._core_api.read_namespaced_pod_log,
+            self._read_bounded_log_bytes,
             operation="read pod log",
+            read_limit=max_bytes + 1,
             **kwargs,
         )
-        if not isinstance(result, str):
+        if not isinstance(result, bytes):
             raise KubernetesDataError(
                 "Kubernetes pod log response has an invalid shape"
             )
-        return result
+        return result.decode("utf-8", errors="replace")
+
+    def _read_bounded_log_bytes(self, *, read_limit: int, **kwargs: object) -> bytes:
+        response = self._core_api.read_namespaced_pod_log(
+            _preload_content=False, **kwargs,
+        )
+        try:
+            payload = response.read(read_limit)
+            if not isinstance(payload, bytes):
+                raise KubernetesDataError(
+                    "Kubernetes pod log response has an invalid shape"
+                )
+            return payload
+        finally:
+            response.close()
+            response.release_conn()
 
     async def read_deployment(
         self,

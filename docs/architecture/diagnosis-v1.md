@@ -10,6 +10,11 @@ consumes model usage and retry budget. Every model attempt is written to the
 existing `llm_calls` audit stream; the audit payload records a candidate hash
 and cited IDs, not raw Evidence text or model prose.
 
+Live OpenAI calls use `prompts/diagnosis/v2.md` and the flat strict wire
+envelope from ADR 0004. Adapter-side JSON decoding must pass
+`DiagnosisDraftV1` before the assembler can check Evidence references.
+Replay continues to use the immutable v1 prompt.
+
 The model receives only Evidence identity, source, resource, observation time,
 and structured attributes. Free-text Evidence content, logs, and event messages
 are not copied into its input. A claim citing an unknown Evidence ID is rejected

@@ -31,6 +31,13 @@ IntentRouter / Planner
 
 Provider Adapter 可以新增或替换，不改变 Router/Planner，因此本阶段不需要 provider 绑定 ADR。
 
+真实 Live smoke 暴露出动态 `ExecutionPlanV1.arguments` 不能作为 OpenAI
+strict Structured Outputs 的对象 Schema。按 [ADR 0004](../adr/0004-strict-model-wire-envelope.md)，
+OpenAI Adapter 对计划和候选诊断使用单字段 `StrictJsonEnvelope` 传输，
+再以各自领域 Pydantic Schema 严格解析。Schema 失败仍进入原有分类重试与审计；
+不能把封套内字符串当作已授权计划或已验证诊断。Live 使用 Planner/Diagnosis
+v2 Prompt，Router 与 Replay 原有 Prompt 不变。真实端点复测尚未完成。
+
 ## Prompt Version
 
 Router Prompt 位于 `prompts/router/v1.md`。加载时按规范化 UTF-8 文本计算 SHA-256，`PromptTemplate` 验证 hash 与内容一致。

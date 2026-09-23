@@ -36,6 +36,7 @@ class FakeApiClient:
 class FakeCoreApi:
     def __init__(self) -> None:
         self.last_call: tuple[str, dict[str, object]] | None = None
+        self.log_response = FakeRawLogResponse(b"bounded log")
 
     def read_namespaced_pod(self, **kwargs: object) -> object:
         self.last_call = ("read_pod", kwargs)
@@ -58,7 +59,25 @@ class FakeCoreApi:
 
     def read_namespaced_pod_log(self, **kwargs: object) -> object:
         self.last_call = ("read_log", kwargs)
-        return "bounded log"
+        return self.log_response
+
+
+class FakeRawLogResponse:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.read_amount: int | None = None
+        self.closed = False
+        self.released = False
+
+    def read(self, amount: int) -> bytes:
+        self.read_amount = amount
+        return self.payload[:amount]
+
+    def close(self) -> None:
+        self.closed = True
+
+    def release_conn(self) -> None:
+        self.released = True
 
 
 class FakeAppsApi:
@@ -119,6 +138,9 @@ def test_reader_passes_bounded_arguments_and_sanitizes_results() -> None:
     assert core.last_call is not None
     assert core.last_call[1]["_request_timeout"] == 7.5
     assert core.last_call[1]["limit_bytes"] == 65_536
+    assert core.last_call[1]["_preload_content"] is False
+    assert core.log_response.read_amount == 65_537
+    assert core.log_response.closed and core.log_response.released
 
     assert asyncio.run(
         reader.list_pods(namespace="team-a", label_selector="app=api")
@@ -161,6 +183,25 @@ def test_reader_passes_bounded_arguments_and_sanitizes_results() -> None:
 
     reader.close()
     assert api_client.closed is True
+
+
+def test_reader_decodes_raw_pod_log_lines_without_bytes_repr() -> None:
+    reader, core, _, _ = _reader()
+    core.log_response = FakeRawLogResponse(
+        b"2026-09-23T10:09:04Z application boot started; configured_startup_delay_seconds=40\n"
+        b"2026-09-23T10:09:28Z process terminated before application ready\n"
+    )
+
+    result = asyncio.run(reader.read_pod_log(
+        namespace="opspilot-fixtures", pod_name="slow-start-api-001",
+        container_name="slow-start-api", previous=True, tail_lines=200,
+        since_seconds=None, max_bytes=65_536,
+    ))
+
+    assert result.count("\n") == 2
+    assert result.startswith("2026-09-23T10:09:04Z ")
+    assert not result.startswith("b'")
+    assert core.log_response.closed and core.log_response.released
 
 
 class RaisingCoreApi:
