@@ -1,6 +1,6 @@
 # V1-005: Bounded Executor、Evidence Extraction 与持久化
 
-- Status: Ready
+- Status: Done
 - Phase: V1
 - Depends on: V0-004, V1-002, V1-004
 
@@ -16,6 +16,7 @@
 - `docs/architecture/error-taxonomy.md`
 - `docs/architecture/storage-model.md`
 - `docs/architecture/v0-contract-baseline.md`
+- `docs/architecture/execution-v1.md`
 
 ## 架构位置
 
@@ -125,11 +126,18 @@ Evidence ID、Tool attempt ID、时间和 clock 必须可注入，保证测试�
 
 ## 验收条件
 
-- [ ] 只有 Validated Plan 可以进入 Executor。
-- [ ] 每次 Tool 尝试可按 Trace 查询，失败尝试也被记录。
-- [ ] logical call、attempt number 与成功 Evidence 的具体 Tool Call 关联清晰。
-- [ ] 预算与 RetryPolicy 同时约束重试和后续调用。
-- [ ] 四类 required Evidence 可从 V0 Case 响应确定性生成。
-- [ ] Evidence 只追加且与当前 Run/Tool Call 外键一致。
-- [ ] 错误使用统一 Taxonomy，已有证据不因后续失败丢失。
-- [ ] 单元测试、数据库集成测试和 strict mypy 通过。
+- [x] 只有 Validated Plan 可以进入 Executor。
+- [x] 每次 Tool 尝试可按 Trace 查询，失败尝试也被记录。
+- [x] logical call、attempt number 与成功 Evidence 的具体 Tool Call 关联清晰。
+- [x] 预算与 RetryPolicy 同时约束重试和后续调用。
+- [x] 四类 required Evidence 可从 V0 Case 响应确定性生成。
+- [x] Evidence 只追加且与当前 Run/Tool Call 外键一致。
+- [x] 错误使用统一 Taxonomy，已有证据不因后续失败丢失。
+- [x] 单元测试、数据库集成测试和 strict mypy 通过。
+
+## 实施记录
+
+- `BoundedExecutor` 顺序执行已封存计划，通过 Registry 调用 Risk 0 Tool；每次尝试独立记账、分类重试并持久化。完成后进入 `VERIFYING`，部分证据的终态留给 V1-006。
+- 新迁移 `20260923_0002_tool_attempts` 对 V0 行回填 logical call/attempt 字段，支持按 Trace 审计重试。一次 Tool Call 与 Evidence 原子提交，回滚只影响失败事务。
+- 五个 Kubernetes 输出有确定性 Extractor。V0 Case 的四步真实 Handler 回放产出 Status、Events、Previous Logs、Deployment 四类 Evidence；当前日志另有单元测试。
+- 全量 `231` 项测试通过，strict mypy 通过；迁移、外键、唯一约束、事务回滚、错误/预算/重试和不可信日志边界均有覆盖。

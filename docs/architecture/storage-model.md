@@ -31,6 +31,8 @@ diagnosis_tasks
 - Evidence 同时引用 `run_id` 和 `tool_call_id`；组合外键保证 Tool Call 属于同一次运行。
 - Diagnosis Result 同时引用 `task_id` 和 `run_id`；组合外键防止结果挂到错误任务。
 - 一个运行最多产生一条当前诊断结果；需要保留新的结论时创建新的运行。
+- V1 新迁移为 `tool_calls` 增加 `logical_call_id` 和 `attempt_no`；`run_id + logical_call_id + attempt_no` 唯一。每次重试保留同一 logical ID，但拥有独立记录 ID 和全局 `sequence_no`。既有行回填为 `logical_call_id=id`、`attempt_no=1`。
+- 成功 Evidence 的 `tool_call_id` 指向具体成功尝试。一次 Tool 尝试与其 Evidence 在同一事务提交，后续失败不回滚已提交历史。
 
 ## 一致性与索引
 
@@ -51,3 +53,4 @@ Evidence 不提供更新时间字段。SQLAlchemy 在 flush 前拒绝更新或�
 - 临时 SQLite：验证从空库升级、回滚到 base、再次升级，以及迁移与 ORM 元数据无漂移。
 - PostgreSQL 方言：验证所有模型可编译为 DDL。
 - Alembic 离线 SQL：验证 PostgreSQL Evidence 追加写触发器包含在首个迁移中。
+- V1 增量迁移：验证既有 Tool Call 的回填、唯一约束、升级/回滚以及 ORM 元数据一致性；不改写首个迁移。

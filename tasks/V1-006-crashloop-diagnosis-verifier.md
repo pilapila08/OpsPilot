@@ -1,6 +1,6 @@
 # V1-006: CrashLoopBackOff Diagnosis 与基础 Verifier
 
-- Status: Planned
+- Status: Ready
 - Phase: V1
 - Depends on: V1-003, V1-005
 
@@ -14,6 +14,7 @@
 - `docs/architecture/evidence-model.md`
 - `fixtures/cases/crashloop-liveness-v1/case.json`
 - `docs/architecture/v0-contract-baseline.md`
+- `docs/architecture/execution-v1.md`
 
 ## 架构位置
 

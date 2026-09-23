@@ -1,5 +1,6 @@
 """Evidence-grounded diagnosis contracts."""
 
+from opspilot.evidence.extractors import EvidenceExtractionError, EvidenceExtractorRegistry
 from opspilot.evidence.models import (
     Claim,
     Contradiction,
@@ -14,6 +15,8 @@ __all__ = [
     "Contradiction",
     "Evidence",
     "EvidenceAttribute",
+    "EvidenceExtractionError",
+    "EvidenceExtractorRegistry",
     "MissingEvidence",
     "Verification",
 ]

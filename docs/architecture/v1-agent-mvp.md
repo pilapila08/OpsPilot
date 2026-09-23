@@ -47,6 +47,7 @@ POST /diagnosis
 
 Structured Model 与 Router 的 V1 具体契约见 [Model Gateway and Intent Router V1](model-gateway-v1.md)。
 Planner、执行计划与校验边界见 [V1 Planner and Plan Validator](planning-v1.md)。
+Executor、重试、Evidence Extraction 和事务边界见 [V1 Bounded Execution and Evidence Persistence](execution-v1.md)。
 
 ## 模块边界
 

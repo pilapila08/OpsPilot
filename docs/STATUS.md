@@ -2,8 +2,8 @@
 
 - Updated: 2026-09-23
 - Current phase: V1 Agent MVP
-- Current task: `V1-005-executor-evidence-persistence`
-- Repository state: V0 已验收并冻结为 v0.1；V1-004 Planner 与 Plan Validator 已完成
+- Current task: `V1-006-crashloop-diagnosis-verifier`（Ready）
+- Repository state: V0 已验收并冻结为 v0.1；V1-005 Bounded Executor 与 Evidence Persistence 已完成，尚未提交
 
 ## 已完成
 
@@ -39,16 +39,20 @@
 - 纯确定性 Plan Validator 严格检查 Tool 白名单、Risk 0、准确输入模型、namespace/目标、重复调用和剩余预算；通过规范 JSON 封存已验证计划。
 - Schema 最多重生成两次，语义无效最多重生成一次；全部尝试写入 `llm_calls`，未知 Tool 和 Policy 拒绝留下安全事件摘要。
 - 全量 215 项测试通过，strict mypy 通过；V0 状态反序列化与既有 Router 路径保持兼容。
+- V1-005 完成：`BoundedExecutor` 只接受封存的 V1 执行计划，顺序通过 Registry 调用只读 Tool；每次尝试独立审计，分类重试受 Tool Policy 与调用/重试/时间预算共同限制。
+- 新迁移保留 V0 首版迁移并扩展 logical call/attempt 字段，旧数据回填且具唯一约束；Tool Call 与 Evidence 以一次尝试为事务单元提交，按 Trace 可查询。
+- 五类 Kubernetes 响应有确定性 Evidence Extractor；V0 Case 真实 Handler 四步回放产生四类 required Evidence，不可信日志/Events 文本不进入证据摘要。
+- 全量 231 项测试通过，strict mypy 通过；迁移升级/回滚、旧数据、事务回滚、失败保留、重试预算与 Case 集成已验证。
 
 ## 正在进行
 
-- `V1-005` 已 Ready：实现 Bounded Executor、Evidence Extraction 与持久化。
+- `V1-006` 已 Ready：实现 CrashLoopBackOff Diagnosis 与基础 Verifier。
 
 ## 下一步
 
-1. 完成 `V1-005`：Bounded Executor、Evidence Extraction 与持久化。
-2. 完成 `V1-006`：CrashLoopBackOff Diagnosis 与基础 Verifier。
-3. 完成 `V1-007`：Runtime Orchestration 与 Offline E2E。
+1. 完成 `V1-006`：CrashLoopBackOff Diagnosis 与基础 Verifier。
+2. 完成 `V1-007`：Runtime Orchestration 与 Offline E2E。
+3. 完成 `V1-008`：FastAPI、Live Smoke Test 与 V1 验收。
 
 ## 已知风险与待决问题
 

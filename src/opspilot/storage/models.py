@@ -207,8 +207,10 @@ class ToolCallRecord(Base):
     __tablename__ = "tool_calls"
     __table_args__ = (
         UniqueConstraint("run_id", "sequence_no"),
+        UniqueConstraint("run_id", "logical_call_id", "attempt_no"),
         UniqueConstraint("id", "run_id"),
         CheckConstraint("sequence_no >= 1", name="sequence_no_positive"),
+        CheckConstraint("attempt_no >= 1", name="attempt_no_positive"),
         CheckConstraint("risk_level BETWEEN 0 AND 2", name="risk_level_valid"),
         CheckConstraint(
             "duration_ms IS NULL OR duration_ms >= 0",
@@ -223,6 +225,8 @@ class ToolCallRecord(Base):
         ForeignKey("agent_runs.id", ondelete="RESTRICT"), nullable=False
     )
     sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    logical_call_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
     tool_version: Mapped[str] = mapped_column(String(32), nullable=False)
     risk_level: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -79,6 +79,8 @@ def seed_complete_trace(session: Session) -> None:
         id="call_001",
         run_id=run.id,
         sequence_no=1,
+        logical_call_id="call_001",
+        attempt_no=1,
         tool_name="k8s.get_pod_events",
         tool_version="v1",
         risk_level=0,
@@ -190,4 +192,3 @@ def test_evidence_tool_call_must_belong_to_same_run(session: Session) -> None:
 
     with pytest.raises(IntegrityError):
         session.commit()
-

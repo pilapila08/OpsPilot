@@ -5,7 +5,9 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
+import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
@@ -79,3 +81,54 @@ def test_postgresql_migration_installs_append_only_evidence_trigger() -> None:
     assert "CREATE FUNCTION opspilot_reject_evidence_mutation()" in migration_sql
     assert "CREATE TRIGGER trg_evidence_append_only" in migration_sql
     assert "BEFORE UPDATE OR DELETE ON evidence" in migration_sql
+
+
+def test_tool_attempt_migration_backfills_existing_calls_and_downgrades(tmp_path: Path) -> None:
+    database_path = tmp_path / "backfill.db"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = migration_config(database_url)
+    command.upgrade(config, "20260922_0001")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO diagnosis_tasks (id, user_query, namespace, status) "
+            "VALUES ('task_001', 'diagnose api', 'team-a', 'PLANNING')"
+        ))
+        connection.execute(text(
+            "INSERT INTO agent_runs (id, task_id, trace_id, attempt_no, status, state_payload, runtime_version) "
+            "VALUES ('run_001', 'task_001', 'trace_001', 1, 'PLANNING', '{}', 'v1')"
+        ))
+        connection.execute(text(
+            "INSERT INTO tool_calls (id, run_id, sequence_no, tool_name, tool_version, risk_level, arguments_payload) "
+            "VALUES ('tool_legacy', 'run_001', 1, 'k8s.get_pod_status', 'v1', 0, '{}')"
+        ))
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        row = connection.execute(text(
+            "SELECT logical_call_id, attempt_no FROM tool_calls WHERE id = 'tool_legacy'"
+        )).one()
+        assert row == ("tool_legacy", 1)
+        context = MigrationContext.configure(connection)
+        assert compare_metadata(context, Base.metadata) == []
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO tool_calls (id, run_id, sequence_no, logical_call_id, attempt_no, "
+                "tool_name, tool_version, risk_level, arguments_payload) "
+                "VALUES ('tool_duplicate', 'run_001', 2, 'tool_legacy', 1, "
+                "'k8s.get_pod_status', 'v1', 0, '{}')"
+            ))
+
+    command.downgrade(config, "20260922_0001")
+    columns = {item["name"] for item in inspect(engine).get_columns("tool_calls")}
+    assert "logical_call_id" not in columns
+    assert "attempt_no" not in columns
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        row = connection.execute(text(
+            "SELECT logical_call_id, attempt_no FROM tool_calls WHERE id = 'tool_legacy'"
+        )).one()
+        assert row == ("tool_legacy", 1)
+    engine.dispose()
