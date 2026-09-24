@@ -1,7 +1,9 @@
 import asyncio
 import json
+from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
+from time import monotonic
 from typing import cast
 
 from pydantic import JsonValue
@@ -134,6 +136,7 @@ def _runtime(
     fail_explicit: bool = False,
     storage: InMemoryRuntimeRepository | None = None,
     audit: InMemoryModelAuditRepository | None = None,
+    monotonic_clock: Callable[[], float] = monotonic,
 ) -> tuple[ObservationRuntimeV2, ScriptedModelClient, InMemoryExecutionRepository, InMemoryPlanningRoundRepository, FakeVerifier]:
     client = ScriptedModelClient(steps)
     audit = audit or InMemoryModelAuditRepository()
@@ -162,6 +165,7 @@ def _runtime(
         registry_factory=lambda _: registry,
         allowed_resources=lambda _: frozenset({"api", "api-001"}),
         budget_limits=limits, id_factory=Ids().new,
+        monotonic_clock=monotonic_clock,
     )
     return runtime, client, tools, rounds, chosen_verifier
 
@@ -284,6 +288,38 @@ def test_v2_budget_exhaustion_after_evidence_persists_partial_result() -> None:
     )
     assert stop.reason.budget.steps_used == 1
     assert stop.reason.budget.tool_calls_used == 1
+    client.assert_exhausted()
+
+
+def test_v2_finish_after_deadline_persists_budget_partial_without_verifier() -> None:
+    storage = InMemoryRuntimeRepository()
+    client: ScriptedModelClient
+
+    def elapsed_clock() -> float:
+        return 90.0 if client.call_count >= 3 else 0.0
+
+    runtime, client, tools, rounds, verifier = _runtime([
+        _router(),
+        _decision(1, "continue", [_call("call_status")]),
+        _decision(2, "finish", [], ["ev_001"]),
+    ], storage=storage, monotonic_clock=elapsed_clock)
+    output = asyncio.run(runtime.run(_request()))
+
+    assert output.status is AgentStatus.BUDGET_EXCEEDED
+    assert output.error is not None and output.error.code is ErrorCode.BUDGET_EXCEEDED
+    assert output.diagnosis is not None and output.diagnosis.schema_version == 3
+    assert output.diagnosis.status == "PARTIAL"
+    assert output.diagnosis.claims_payload == ()
+    assert output.diagnosis.verification_payload["checked_evidence_ids"] == [
+        item.evidence_id for item in tools.evidence
+    ]
+    assert len(tools.attempts) == len(rounds.rounds) == 1
+    assert verifier.calls == 0
+    (stop,) = storage.budget_stops_for_trace(output.trace_id)
+    assert (stop.reason.dimension, stop.reason.phase, stop.reason.step_no, stop.round_no) == (
+        "elapsed", "planner.after", 2, 2,
+    )
+    assert stop.reason.budget.elapsed_seconds == 90.0
     client.assert_exhausted()
 
 

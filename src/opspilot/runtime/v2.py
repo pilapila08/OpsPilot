@@ -131,6 +131,9 @@ class ObservationRuntimeV2:
             )
             state = self._with_budget(state, routed.budget, started)
             self._runs.save_state(run_id, state)
+            rejected = BudgetManager.check_model(state.budget, phase="router.after", after=True)
+            if rejected is not None:
+                return self._budget_partial(run_id, state, rejected.reason, active_round)
             if routed.intent is None:
                 return self._fail(
                     run_id, state,
@@ -183,6 +186,9 @@ class ObservationRuntimeV2:
                     return self._fail(run_id, state, exc.error)
                 state = self._with_budget(state, outcome.budget, started)
                 self._runs.save_state(run_id, state)
+                rejected = BudgetManager.check_model(state.budget, phase="planner.after", after=True)
+                if rejected is not None:
+                    return self._budget_partial(run_id, state, rejected.reason, round_no)
                 decision = outcome.admitted.decision
                 renewed = validator.validate(
                     decision, intent=intent, round_no=round_no,
