@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {"namespace": "team-a", "deployment_name": "api", "project": "approved/deployments", "environment": "staging", "releases": [
+    {"release_id": "42", "commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "deployed_at": "2026-09-23T11:40:00Z", "status": "success"},
+    {"release_id": "41", "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "deployed_at": "2026-09-23T10:20:00Z", "status": "inactive"}
+  ], "truncated": false, "observed_at": "2026-09-23T12:00:00Z"},
+  "metadata": {"call_id": "call_releases", "tool_name": "cicd.get_recent_deployment", "source": "cicd", "duration_ms": 1, "tool_version": "v2"},
+  "error": null
+}

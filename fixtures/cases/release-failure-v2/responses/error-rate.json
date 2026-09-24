@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "data": {"namespace": "team-a", "workload_name": "api", "pod_name": null, "container_name": null,
+    "metric": "error_rate", "unit": "ratio", "status": "present", "observed_at": "2026-09-23T12:00:00Z",
+    "samples": [
+      {"sampled_at": "2026-09-23T11:29:00Z", "value": 0.001},
+      {"sampled_at": "2026-09-23T11:34:00Z", "value": 0.002},
+      {"sampled_at": "2026-09-23T11:46:00Z", "value": 0.12},
+      {"sampled_at": "2026-09-23T11:50:00Z", "value": 0.14}
+    ]},
+  "metadata": {"call_id": "call_error_rate", "tool_name": "prometheus.query_error_rate", "source": "prometheus", "duration_ms": 1, "tool_version": "v2"},
+  "error": null
+}

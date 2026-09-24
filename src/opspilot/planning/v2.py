@@ -24,6 +24,7 @@ from opspilot.tools.kubernetes.v2_models import (
     ServiceMembershipInputV2,
 )
 from opspilot.tools.prometheus import MetricInputV2, Service503InputV2
+from opspilot.tools.release import CicdDeploymentInput, GitCommitInput, GitDiffInput
 from opspilot.tools.models import TOOL_NAME_PATTERN, ToolDescriptor, ToolRiskLevel
 
 _CALL_ID = r"^[a-z][a-z0-9_-]{2,127}$"
@@ -47,6 +48,12 @@ _SIGNAL_KEYS = frozenset({
     "termination_reason", "memory_limit_bytes", "metric_value", "metric_unit",
     "sample_status",
     "pod_ready", "readiness_failure", "probe_kind", "probe_port",
+    "release_id", "commit_sha", "parent_sha", "base_sha", "head_sha",
+    "release_status", "environment", "deployment_history_truncated",
+    "diff_file_count", "diff_additions", "diff_deletions",
+    "diff_config_count", "diff_code_count", "diff_docs_count",
+    "diff_manifests_count", "diff_sensitive_count", "diff_tests_count",
+    "diff_other_count",
 })
 _CATEGORIES = frozenset({
     "OOMKilled", "CrashLoopBackOff", "Running", "Waiting", "Terminated",
@@ -61,12 +68,17 @@ _NUMERIC_FACTS = frozenset({
     "ready_endpoint_count", "serving_endpoint_count", "deployment_generation",
     "unknown_ready_endpoint_count", "terminating_serving_endpoint_count",
     "active_ready_pod_count", "matching_ready_pod_count",
+    "diff_file_count", "diff_additions", "diff_deletions",
+    "diff_config_count", "diff_code_count", "diff_docs_count",
+    "diff_manifests_count", "diff_sensitive_count", "diff_tests_count",
+    "diff_other_count",
     "memory_limit_bytes",
 })
 _BOOLEAN_FACTS = frozenset({
     "liveness_failure", "truncated", "startup_probe_configured",
     "endpoint_snapshot_truncated", "rollout_ambiguous", "membership_truncated",
     "pod_ready", "readiness_failure",
+    "deployment_history_truncated",
 })
 _NAMED_PORT = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 _RESOURCE_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$")
@@ -88,6 +100,9 @@ _DEFAULT_INPUT_MODELS: Mapping[str, type[BaseModel]] = {
     "prometheus.query_latency": MetricInputV2,
     "prometheus.query_error_rate": MetricInputV2,
     "prometheus.query_http_503_rate": Service503InputV2,
+    "cicd.get_recent_deployment": CicdDeploymentInput,
+    "git.get_recent_commit": GitCommitInput,
+    "git.diff": GitDiffInput,
 }
 
 
@@ -193,6 +208,13 @@ def _safe_fact(key: str, value: object) -> ObservationFactV2 | None:
             "metric_unit": re.compile(r"^(cores|bytes|seconds|ratio)$"),
             "sample_status": re.compile(r"^(missing|stale)$"),
             "probe_kind": re.compile(r"^(http|tcp|exec)$"),
+            "release_id": re.compile(r"^[1-9][0-9]{0,19}$"),
+            "commit_sha": re.compile(r"^[0-9a-f]{40}$"),
+            "parent_sha": re.compile(r"^[0-9a-f]{40}$"),
+            "base_sha": re.compile(r"^[0-9a-f]{40}$"),
+            "head_sha": re.compile(r"^[0-9a-f]{40}$"),
+            "release_status": re.compile(r"^(success|failure|error|inactive|in_progress|queued|pending|unknown)$"),
+            "environment": re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"),
         }.get(key)
         if pattern is not None and pattern.fullmatch(value):
             return ObservationFactV2(key=key, value=value)

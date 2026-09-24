@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "data": {"namespace": "team-a", "deployment_name": "api", "repository": "approved/backend",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "file_count": 2, "additions": 14, "deletions": 3,
+    "categories": [{"category": "code", "file_count": 1}, {"category": "config", "file_count": 1}]},
+  "metadata": {"call_id": "call_diff", "tool_name": "git.diff", "source": "git", "duration_ms": 1, "tool_version": "v2"},
+  "error": null
+}

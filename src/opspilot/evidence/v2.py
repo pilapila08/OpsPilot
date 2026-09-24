@@ -18,6 +18,7 @@ from opspilot.tools.kubernetes.models import (
 from opspilot.tools.kubernetes.v2_models import ServiceMembershipOutputV2
 from opspilot.tools.models import ToolInvocation, ToolResponse
 from opspilot.tools.prometheus import MetricOutputV2
+from opspilot.tools.release import CicdDeploymentOutput, GitCommitOutput, GitDiffOutput
 
 _MEMORY = re.compile(r"^([0-9]+(?:\.[0-9]+)?)(Ki|Mi|Gi|Ti|K|M|G|T)?$")
 _SCALE = {
@@ -39,6 +40,11 @@ class V2EvidenceExtractorRegistry(EvidenceExtractorRegistry):
             )
         if invocation.tool == "k8s.get_service_membership":
             return _membership_evidence(
+                invocation, response, trace_id, tool_attempt_id,
+                collected_at, evidence_id_factory,
+            )
+        if invocation.tool in {"git.get_recent_commit", "git.diff", "cicd.get_recent_deployment"}:
+            return _release_evidence(
                 invocation, response, trace_id, tool_attempt_id,
                 collected_at, evidence_id_factory,
             )
@@ -189,6 +195,97 @@ def _membership_evidence(
             EvidenceAttribute(key="rollout_ambiguous", value=output.rollout_ambiguous),
         ),
     ),)
+
+
+def _release_evidence(
+    invocation: ToolInvocation, response: ToolResponse, trace_id: str,
+    tool_attempt_id: str, collected_at: datetime,
+    evidence_id_factory: Callable[[], str],
+) -> tuple[Evidence, ...]:
+    if not response.success or response.data is None:
+        raise EvidenceExtractionError("Release Evidence requires a successful Tool response")
+    if (response.metadata.call_id != invocation.call_id
+        or response.metadata.tool_name != invocation.tool):
+        raise EvidenceExtractionError("Release response differs from invocation")
+    output: GitCommitOutput | GitDiffOutput | CicdDeploymentOutput
+    try:
+        if invocation.tool == "git.get_recent_commit":
+            output = GitCommitOutput.model_validate_json(json.dumps(response.data), strict=True)
+        elif invocation.tool == "git.diff":
+            output = GitDiffOutput.model_validate_json(json.dumps(response.data), strict=True)
+        else:
+            output = CicdDeploymentOutput.model_validate_json(json.dumps(response.data), strict=True)
+    except ValidationError:
+        raise EvidenceExtractionError("Release output failed schema validation") from None
+    if (output.namespace != invocation.arguments.get("namespace")
+        or output.deployment_name != invocation.arguments.get("deployment_name")):
+        raise EvidenceExtractionError("Release target differs from invocation")
+    resource = f"{output.namespace}/deployment/{output.deployment_name}"
+    if isinstance(output, GitCommitOutput):
+        if output.commit_sha != invocation.arguments.get("commit_sha") or output.committed_at > collected_at:
+            raise EvidenceExtractionError("Commit identity or time differs from invocation")
+        return (Evidence(
+            evidence_id=evidence_id_factory(), trace_id=trace_id,
+            tool_call_id=tool_attempt_id, source="git_commit", resource=resource,
+            observed_at=output.committed_at, collected_at=collected_at,
+            content="Immutable Git commit metadata was read.",
+            source_confidence=1.0, raw_result_ref=tool_attempt_id,
+            attributes=(
+                EvidenceAttribute(key="commit_sha", value=output.commit_sha),
+                EvidenceAttribute(key="parent_sha", value=output.parent_shas[0] if output.parent_shas else None),
+            ),
+        ),)
+    if isinstance(output, GitDiffOutput):
+        if (output.base_sha != invocation.arguments.get("base_sha")
+            or output.head_sha != invocation.arguments.get("head_sha")):
+            raise EvidenceExtractionError("Git comparison differs from invocation")
+        return (Evidence(
+            evidence_id=evidence_id_factory(), trace_id=trace_id,
+            tool_call_id=tool_attempt_id, source="git_diff", resource=resource,
+            observed_at=collected_at, collected_at=collected_at,
+            content="Bounded patch-free Git change categories were read.",
+            source_confidence=1.0, raw_result_ref=tool_attempt_id,
+            attributes=(
+                EvidenceAttribute(key="base_sha", value=output.base_sha),
+                EvidenceAttribute(key="head_sha", value=output.head_sha),
+                EvidenceAttribute(key="diff_file_count", value=output.file_count),
+                EvidenceAttribute(key="diff_additions", value=output.additions),
+                EvidenceAttribute(key="diff_deletions", value=output.deletions),
+                *(EvidenceAttribute(key=f"diff_{item.category}_count", value=item.file_count)
+                  for item in output.categories),
+            ),
+        ),)
+    if output.truncated:
+        return (Evidence(
+            evidence_id=evidence_id_factory(), trace_id=trace_id,
+            tool_call_id=tool_attempt_id, source="cicd_deployment", resource=resource,
+            observed_at=collected_at, collected_at=collected_at,
+            content="CI deployment history is incomplete.", source_confidence=1.0,
+            raw_result_ref=tool_attempt_id,
+            attributes=(EvidenceAttribute(key="deployment_history_truncated", value=True),),
+        ),)
+    if not output.releases:
+        return (Evidence(
+            evidence_id=evidence_id_factory(), trace_id=trace_id,
+            tool_call_id=tool_attempt_id, source="cicd_deployment", resource=resource,
+            observed_at=collected_at, collected_at=collected_at,
+            content="No recent CI deployments were found.", source_confidence=1.0,
+            raw_result_ref=tool_attempt_id,
+            attributes=(EvidenceAttribute(key="sample_status", value="missing"),),
+        ),)
+    return tuple(Evidence(
+        evidence_id=evidence_id_factory(), trace_id=trace_id,
+        tool_call_id=tool_attempt_id, source="cicd_deployment", resource=resource,
+        observed_at=min(item.deployed_at, collected_at), collected_at=collected_at,
+        content="An immutable CI deployment was observed.",
+        source_confidence=1.0, raw_result_ref=tool_attempt_id,
+        attributes=(
+            EvidenceAttribute(key="release_id", value=item.release_id),
+            EvidenceAttribute(key="commit_sha", value=item.commit_sha),
+            EvidenceAttribute(key="release_status", value=item.status),
+            EvidenceAttribute(key="environment", value=output.environment),
+        ),
+    ) for item in output.releases)
 
 
 def _metric_evidence(

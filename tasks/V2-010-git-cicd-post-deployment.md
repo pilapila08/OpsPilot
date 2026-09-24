@@ -1,6 +1,6 @@
 # V2-010: Git/CI 只读元数据与发布后故障
 
-- Status: Planned
+- Status: In Progress
 - Phase: V2
 - Depends on: V2-003, V2-005
 
@@ -48,7 +48,17 @@
 
 ## 验收条件
 
-- [ ] 三个 Tool 严格只读且仓库/项目范围可验证。
+- [x] 三个 Tool 严格只读且仓库/项目范围可验证。
 - [ ] Post-deployment Case 与反证/Partial 分支可回放。
-- [ ] 变更摘要不泄漏源码秘密，时间线和 Evidence 可审计。
-- [ ] 默认 pytest、strict mypy 与 STATUS 更新通过。
+- [x] 变更摘要不泄漏源码秘密，时间线和 Evidence 可审计。
+- [x] 默认 pytest、strict mypy 与 STATUS 更新通过。
+
+## 当前实现与剩余门槛
+
+- 已实现固定 GitHub REST GET Reader、配置侧 namespace/Deployment → repository/project/environment allowlist、三个 Risk 0 Tool。diff 只输出类别计数与变更量，补丁、路径、commit message 和 CI 日志不进入 ToolResponse/Evidence。
+- CI 时间采用成功 deployment status 的 UTC 时间；曾成功但现为 inactive 的记录保留原成功时间。分页、越界、路径逃逸、非祖先比较、权限/超时和乱序时间均 fail closed。
+- 新增确定性发布时间线 Verifier：发布后错误率上升、故障早于发布、重叠发布、缺 commit/指标、以及旧 SHA 重新部署后恢复均有测试。只支持“时间相关”Partial，不把发布当已证实根因。
+- `fixtures/cases/release-failure-v2/` 的 `post_release_rise` 分支已通过完整 SQLite Runtime/Planner/Replay/Evidence/Verifier 审计。其余反证目前是单元测试，还需扩为 Case v2 回放分支。
+- 既有 `k8s.get_deployment` 不包含可信的运行中 image digest ↔ CI commit/revision 绑定；当前 Verification 显式列出 `deployment_snapshot`、`workload_revision_binding` 和 `direct_causality` 缺口。未实现绑定前不升级为 COMPLETED。
+- 可选真实 GitHub/CI Live smoke 未执行，需隔离只读 token 与测试发布记录。
+- 当前默认离线回归 `394 passed, 3 skipped`（均为显式 opt-in Live），`mypy src tests` strict 检查 165 个文件通过。

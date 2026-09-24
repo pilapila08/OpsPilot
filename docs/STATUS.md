@@ -2,7 +2,7 @@
 
 - Updated: 2026-09-24
 - Current phase: V2 诊断能力扩展（有界多轮 Runtime、Kubernetes V2 与 Prometheus/OOM 纵向切片已实现）
-- Current task: `V2-010-git-cicd-post-deployment` 待启动；`V2-006` 保留已完成 Evidence，暂缓待续
+- Current task: `V2-010-git-cicd-post-deployment`（In Progress）；`V2-006` 保留已完成 Evidence，暂缓待续
 - Repository state: V0 契约 v0.1 已冻结；V1 Offline/Live 与修复侧验收完成；V2-001 已形成版本化架构、ADR 与工作单
 
 ## 已完成
@@ -73,11 +73,11 @@
 
 ## 正在进行
 
-- 当前无进行中的工作单。V2-006 已有 Pod Ready condition、readiness Event 与 Deployment probe Evidence，但 Verifier、四分支 Case 与恢复快照未完成，状态退回 Ready 待续。
+- V2-010 正在进行：GitHub 只读 Reader、配置 allowlist、三个 Risk 0 Tool、无原文 diff 的 Evidence 与确定性发布/错误率时间线已实现。`release-failure-v2` 主分支通过 SQLite 全链路回放；故障早于发布、重叠发布、未知 commit、缺指标、重复样本与回滚恢复有单元反证。默认离线 `394 passed, 3 skipped`（opt-in Live），strict mypy 165 文件通过。运行中 Deployment 与 CI SHA 的可信绑定及反证 Case 回放仍待实现，故所有发布相关性结论保持 Partial。V2-006 已有 Pod Ready condition、readiness Event 与 Deployment probe Evidence，但 Verifier、四分支 Case 与恢复快照未完成，状态退回 Ready 待续。
 
 ## 下一步
 
-1. 推进 V2-010 Git/CI 发布类，保持只读、allowlist、限量 diff 和时间/关联反证。
+1. 完成 V2-010 的 Deployment revision/commit 可信绑定与多分支 Case 回放；没有直接配置/行为证据时继续保持 Partial。
 2. V2-006 保留待续；有网关侧 503 来源指标时，可另开 V2-011 的端口因果增强任务。
 
 ## 已知风险与待决问题

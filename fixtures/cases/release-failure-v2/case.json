@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "case_id": "release_failure_v2",
+  "title": "Error-rate increase following an allowlisted CI release",
+  "query": "Why did the api Deployment start failing after release?",
+  "trace_id": "trace_release_case",
+  "target": {"namespace": "team-a", "kind": "deployment", "resource": "api"},
+  "candidate_families": ["post_deployment_failure"],
+  "allowed_tools": ["cicd.get_recent_deployment", "prometheus.query_error_rate", "git.get_recent_commit", "git.diff"],
+  "allowed_sources": ["cicd", "prometheus", "git"],
+  "allowed_evidence_sources": ["cicd_deployment", "prometheus_error_rate", "git_commit", "git_diff"],
+  "allowed_resource_names": ["api"],
+  "branches": [{
+    "branch_id": "post_release_rise",
+    "fault_family": "post_deployment_failure",
+    "steps": [
+      {"phase": "fault", "invocation": {"call_id": "call_releases", "tool": "cicd.get_recent_deployment", "arguments": {"namespace": "team-a", "deployment_name": "api"}}, "response_file": "responses/deployments.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_error_rate", "tool": "prometheus.query_error_rate", "arguments": {"namespace": "team-a", "workload_name": "api", "window_seconds": 3600, "step_seconds": 60, "max_samples": 100}}, "response_file": "responses/error-rate.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_commit", "tool": "git.get_recent_commit", "arguments": {"namespace": "team-a", "deployment_name": "api", "commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}, "response_file": "responses/commit.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_diff", "tool": "git.diff", "arguments": {"namespace": "team-a", "deployment_name": "api", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}, "response_file": "responses/diff.json"}
+    ],
+    "evidence": [
+      {"evidence_id": "ev_case_release_current", "trace_id": "trace_release_case", "tool_call_id": "call_releases", "source": "cicd_deployment", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T11:40:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Successful CI release 42.", "source_confidence": 1.0, "attributes": [{"key": "release_id", "value": "42"}, {"key": "commit_sha", "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, {"key": "release_status", "value": "success"}]},
+      {"evidence_id": "ev_case_release_prior", "trace_id": "trace_release_case", "tool_call_id": "call_releases", "source": "cicd_deployment", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T10:20:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Prior CI release 41.", "source_confidence": 1.0, "attributes": [{"key": "release_id", "value": "41"}, {"key": "commit_sha", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {"key": "release_status", "value": "inactive"}]},
+      {"evidence_id": "ev_case_before_one", "trace_id": "trace_release_case", "tool_call_id": "call_error_rate", "source": "prometheus_error_rate", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T11:29:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Pre-release error ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.001}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_before_two", "trace_id": "trace_release_case", "tool_call_id": "call_error_rate", "source": "prometheus_error_rate", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T11:34:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Pre-release error ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.002}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_after_one", "trace_id": "trace_release_case", "tool_call_id": "call_error_rate", "source": "prometheus_error_rate", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T11:46:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Post-release error ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.12}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_after_two", "trace_id": "trace_release_case", "tool_call_id": "call_error_rate", "source": "prometheus_error_rate", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T11:50:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Post-release error ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.14}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_commit", "trace_id": "trace_release_case", "tool_call_id": "call_commit", "source": "git_commit", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T11:25:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Immutable released commit.", "source_confidence": 1.0, "attributes": [{"key": "commit_sha", "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]},
+      {"evidence_id": "ev_case_diff", "trace_id": "trace_release_case", "tool_call_id": "call_diff", "source": "git_diff", "resource": "team-a/deployment/api", "observed_at": "2026-09-23T12:00:00Z", "collected_at": "2026-09-23T12:00:00Z", "content": "Patch-free change categories.", "source_confidence": 1.0, "attributes": [{"key": "base_sha", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {"key": "head_sha", "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}
+    ],
+    "required_signals": [
+      {"signal": "release.current", "evidence_id": "ev_case_release_current"},
+      {"signal": "release.prior", "evidence_id": "ev_case_release_prior"},
+      {"signal": "release.before", "evidence_id": "ev_case_before_one"},
+      {"signal": "release.after", "evidence_id": "ev_case_after_one"},
+      {"signal": "release.commit", "evidence_id": "ev_case_commit"},
+      {"signal": "release.diff", "evidence_id": "ev_case_diff"},
+      {"signal": "workload_revision_binding", "evidence_id": null}
+    ],
+    "contradiction_signals": ["release.failure_predates", "release.overlap"],
+    "expected_diagnosis": {
+      "status": "PARTIAL",
+      "root_cause": "The failure follows a CI release, but the responsible change is unproven.",
+      "recommendation": "Verify the running revision and compare direct behavior before considering a rollback.",
+      "claim": {"claim_id": "claim_release_error_correlation", "text": "Workload error rate rose after the observed CI release; change causality is unverified.", "evidence_ids": ["ev_case_release_current", "ev_case_release_prior", "ev_case_commit", "ev_case_diff", "ev_case_before_one", "ev_case_before_two", "ev_case_after_one", "ev_case_after_two"], "inference_confidence": 0.4},
+      "verification": {"claim_id": "claim_release_error_correlation", "supported": false, "verification_confidence": 0.4, "checked_evidence_ids": ["ev_case_release_current", "ev_case_release_prior", "ev_case_before_one", "ev_case_before_two", "ev_case_after_one", "ev_case_after_two", "ev_case_commit", "ev_case_diff"], "missing_evidence": [
+        {"requirement": "deployment_snapshot", "reason": "A current Kubernetes Deployment snapshot is unavailable."},
+        {"requirement": "workload_revision_binding", "reason": "CI release SHA has not been bound to the running Deployment revision or image digest."},
+        {"requirement": "direct_causality", "reason": "A config or behavior observation is needed before attributing the failure to this change."}
+      ], "contradictions": [], "rationale": "Release identity and error-rate timing can support correlation, not workload linkage or causation."}
+    },
+    "recovery": null
+  }]
+}

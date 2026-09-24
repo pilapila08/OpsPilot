@@ -26,7 +26,7 @@
 | V2-007 | [Liveness Probe Failure](V2-007-liveness-failure.md) | Planned | V2-003 |
 | V2-008 | [ImagePullBackOff](V2-008-image-pull-failure.md) | Planned | V2-003 |
 | V2-009 | [Loki 日志与延迟升高](V2-009-loki-and-latency.md) | Planned | V2-003、V2-005 |
-| V2-010 | [Git/CI 元数据与发布后故障](V2-010-git-cicd-post-deployment.md) | Planned | V2-003、V2-005 |
+| V2-010 | [Git/CI 元数据与发布后故障](V2-010-git-cicd-post-deployment.md) | In Progress | V2-003、V2-005 |
 | V2-011 | [Service 503 拓扑诊断](V2-011-service-503.md) | Done | V2-003、V2-004、V2-005 |
 | V2-012 | [八类故障与多数据源阶段验收](V2-012-multi-fault-acceptance.md) | Planned | V2-005 至 V2-011 |
 

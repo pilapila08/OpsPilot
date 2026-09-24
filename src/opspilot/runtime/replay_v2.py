@@ -11,6 +11,8 @@ from opspilot.integrations.prometheus import PrometheusReader
 from opspilot.tools import ToolInvocation, ToolRegistry
 from opspilot.tools.kubernetes import build_kubernetes_registry_v2
 from opspilot.tools.prometheus import prometheus_tool_definitions_v2
+from opspilot.tools.release import ReleaseAllowlist, release_tool_definitions
+from opspilot.integrations.release import GitReader, CicdReader
 from opspilot.tools.models import ToolMetadata, ToolResponse
 
 
@@ -19,6 +21,11 @@ class ReplayV2Registry(ToolRegistry):
         super().__init__()
         definitions = build_kubernetes_registry_v2(cast(KubernetesReaderV2, object()))
         for definition in prometheus_tool_definitions_v2(cast(PrometheusReader, object())):
+            definitions.register(definition)
+        for definition in release_tool_definitions(
+            scopes=cast(ReleaseAllowlist, object()),
+            git=cast(GitReader, object()), cicd=cast(CicdReader, object()),
+        ):
             definitions.register(definition)
         for descriptor in definitions.descriptors():
             if descriptor.name in case.definition.allowed_tools:
