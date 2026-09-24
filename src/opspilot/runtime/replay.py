@@ -169,7 +169,7 @@ def _response_data(case: LoadedCase, step: ReplayStep) -> JsonObject:
     response = case.response_for(step.invocation.call_id)
     if not response.success or response.data is None:
         raise ReplayConfigurationError("case fault response must be successful")
-    return cast(JsonObject, deepcopy(response.data))
+    return deepcopy(response.data)
 
 
 def _expected_invocation(case: LoadedCase, step: ReplayStep) -> ToolInvocation:
