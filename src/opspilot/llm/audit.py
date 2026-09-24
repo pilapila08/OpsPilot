@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from pydantic import (
@@ -77,6 +78,40 @@ class RecordedModelCall(StrictSchema):
     sequence_no: int = Field(ge=1)
 
 
+class ModelCallView(StrictSchema):
+    """Safe, ordered read projection of one persisted model attempt."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    call_id: str = Field(min_length=3, max_length=128, pattern=_ID_PATTERN)
+    run_id: str = Field(min_length=3, max_length=128, pattern=_ID_PATTERN)
+    sequence_no: int = Field(ge=1)
+    component: str = Field(min_length=1, max_length=64)
+    prompt_version_id: str = Field(min_length=3, max_length=128)
+    round_no: int | None = Field(default=None, ge=1, le=4)
+    provider: str = Field(min_length=1, max_length=64)
+    model_name: str = Field(min_length=1, max_length=128)
+    model_version: str | None = Field(default=None, max_length=64)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    cost_usd: Decimal = Field(ge=Decimal("0"))
+    latency_ms: int = Field(ge=0)
+    retry_count: int = Field(ge=0)
+    success: bool
+    error_code: ErrorCode | None
+    started_at: datetime
+    completed_at: datetime | None
+
+    @field_validator("started_at", "completed_at")
+    @classmethod
+    def normalize_time(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("model call timestamps must be timezone-aware")
+        return value.astimezone(UTC)
+
+
 @runtime_checkable
 class ModelAuditRepository(Protocol):
     def register_prompt(self, prompt: PromptTemplate) -> str: ...
@@ -86,13 +121,23 @@ class ModelAuditRepository(Protocol):
         attempt: ModelCallAttempt,
     ) -> RecordedModelCall: ...
 
+    def calls_for_trace(self, trace_id: str) -> tuple[ModelCallView, ...]: ...
+
 
 class InMemoryModelAuditRepository:
     """Deterministic audit sink for Router and Planner unit tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, trace_by_run: Mapping[str, str] | None = None) -> None:
         self.prompts: dict[tuple[str, str], PromptTemplate] = {}
         self.attempts: list[ModelCallAttempt] = []
+        self.trace_by_run: dict[str, str] = dict(trace_by_run or {})
+
+    def bind_run_trace(self, run_id: str, trace_id: str) -> None:
+        """Supply the Run/Trace identity absent from ModelCallAttempt."""
+        existing = self.trace_by_run.get(run_id)
+        if existing is not None and existing != trace_id:
+            raise ModelAuditError("run is already bound to another trace")
+        self.trace_by_run[run_id] = trace_id
 
     def register_prompt(self, prompt: PromptTemplate) -> str:
         key = (prompt.component, prompt.version)
@@ -117,6 +162,42 @@ class InMemoryModelAuditRepository:
             run_id=attempt.run_id,
             sequence_no=sequence_no,
         )
+
+    def calls_for_trace(self, trace_id: str) -> tuple[ModelCallView, ...]:
+        sequence_by_run: dict[str, int] = {}
+        views: list[ModelCallView] = []
+        for attempt in self.attempts:
+            sequence_no = sequence_by_run.get(attempt.run_id, 0) + 1
+            sequence_by_run[attempt.run_id] = sequence_no
+            if self.trace_by_run.get(attempt.run_id) != trace_id:
+                continue
+            views.append(ModelCallView(
+                call_id=f"llm_{attempt.run_id}_{sequence_no}",
+                run_id=attempt.run_id,
+                sequence_no=sequence_no,
+                component=attempt.component,
+                prompt_version_id=attempt.prompt_version_id,
+                round_no=safe_round_no(attempt.request_payload),
+                provider=attempt.provider,
+                model_name=attempt.model_name,
+                model_version=attempt.model_version,
+                input_tokens=attempt.input_tokens,
+                output_tokens=attempt.output_tokens,
+                cost_usd=attempt.cost_usd,
+                latency_ms=attempt.latency_ms,
+                retry_count=attempt.retry_count,
+                success=attempt.success,
+                error_code=attempt.error_code,
+                started_at=attempt.started_at,
+                completed_at=attempt.completed_at,
+            ))
+        return tuple(views)
+
+
+def safe_round_no(payload: Mapping[str, object]) -> int | None:
+    """Project only a valid V2 round number from stored request metadata."""
+    value = payload.get("round_no")
+    return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 4 else None
 
 
 def prompt_record_id(prompt: PromptTemplate) -> str:

@@ -1,6 +1,6 @@
 # V3-001: Trace 统一查询与本地 CLI
 
-- Status: Ready
+- Status: Done
 - Phase: V3
 - Depends on: V1-007、V2-003
 
@@ -25,10 +25,12 @@
 
 ## 验收
 
-- [ ] V1/V2、成功/失败、Tool 重试及不存在 Trace 均可查询。
-- [ ] 多 Trace 数据严格隔离，顺序确定，CLI 查询不执行迁移或创建数据库。
-- [ ] 每次 LLM 尝试可关联历史 Prompt 版本；安全投影不泄漏原始 provider 文本。
-- [ ] 定向测试、默认 pytest、strict mypy 通过，更新 STATUS 与交接说明。
+- [x] V1/V2、成功/失败、Tool 重试及不存在 Trace 均可查询。
+- [x] 多 Trace 数据严格隔离，顺序确定，CLI 查询不执行迁移或创建数据库。
+- [x] 每次 LLM 尝试可关联历史 Prompt 版本；安全投影不泄漏原始 provider 文本。
+- [x] 定向测试、默认 pytest、strict mypy 通过，更新 STATUS；整批交付的交接说明在 V3-003 收尾。
+
+2026-09-25：定向 5 passed；默认 398 passed、4 skipped（3 个 opt-in Live、1 个 Windows symlink）；strict mypy 171 文件通过。既有本机 V1 Replay 数据经 CLI 读取成功。CLI 决策见 ADR 0006。内存审计查询须显式绑定 Run/Trace；SQL 查询由 Run 外键关联。
 
 ## 不做
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -13,11 +14,14 @@ from sqlalchemy.orm import Session
 from opspilot.llm.audit import (
     ModelAuditError,
     ModelCallAttempt,
+    ModelCallView,
     RecordedModelCall,
     prompt_record_id,
+    safe_round_no,
 )
+from opspilot.errors import ErrorCode
 from opspilot.llm.models import PromptTemplate
-from opspilot.storage.models import LLMCallRecord, PromptVersionRecord
+from opspilot.storage.models import AgentRunRecord, LLMCallRecord, PromptVersionRecord
 
 
 class SQLAlchemyModelAuditRepository:
@@ -104,6 +108,34 @@ class SQLAlchemyModelAuditRepository:
             sequence_no=sequence_no,
         )
 
+    def calls_for_trace(self, trace_id: str) -> tuple[ModelCallView, ...]:
+        rows = self._session.scalars(
+            select(LLMCallRecord)
+            .join(AgentRunRecord, LLMCallRecord.run_id == AgentRunRecord.id)
+            .where(AgentRunRecord.trace_id == trace_id)
+            .order_by(LLMCallRecord.sequence_no, LLMCallRecord.id)
+        ).all()
+        return tuple(ModelCallView(
+            call_id=row.id,
+            run_id=row.run_id,
+            sequence_no=row.sequence_no,
+            component=row.component,
+            prompt_version_id=row.prompt_version_id,
+            round_no=safe_round_no(row.request_payload),
+            provider=row.provider,
+            model_name=row.model_name,
+            model_version=row.model_version,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            cost_usd=row.cost_usd,
+            latency_ms=row.latency_ms,
+            retry_count=row.retry_count,
+            success=row.success,
+            error_code=ErrorCode(row.error_code) if row.error_code else None,
+            started_at=_aware(row.started_at),
+            completed_at=_aware(row.completed_at) if row.completed_at else None,
+        ) for row in rows)
+
     def _commit(self, record_type: str) -> None:
         try:
             self._session.commit()
@@ -116,3 +148,7 @@ class SQLAlchemyModelAuditRepository:
 
 def _json_dict(value: Mapping[str, object]) -> dict[str, Any]:
     return dict(value)
+
+
+def _aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

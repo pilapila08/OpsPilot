@@ -45,3 +45,4 @@ NNNN-short-title.md
 - [ADR 0003：冻结 V0.1 核心契约基线](0003-freeze-v0-contracts.md)
 - [ADR 0004：Strict Structured Output 扁平传输封套](0004-strict-model-wire-envelope.md)
 - [ADR 0005：V2 有界观察驱动多轮规划](0005-bounded-observation-planning-v2.md)
+- [ADR 0006：本地 CLI Trace 查询与安全投影](0006-local-trace-query.md)
