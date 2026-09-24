@@ -28,6 +28,13 @@ from opspilot.integrations.kubernetes.models import (
     ResourceName,
 )
 from opspilot.integrations.kubernetes.targeting import PodTargetResolver
+from opspilot.integrations.kubernetes.targeting_v2 import MultiPodResolverV2
+from opspilot.integrations.kubernetes.v2_client import (
+    KubernetesReaderV2,
+    KubernetesSdkReaderV2,
+    build_kubernetes_reader_v2,
+)
+from opspilot.integrations.kubernetes.v2_models import MultiPodSnapshotV2, PodSnapshotV2
 
 __all__ = [
     "ContainerName",
@@ -43,13 +50,19 @@ __all__ = [
     "KubernetesPermissionError",
     "KubernetesReader",
     "KubernetesSdkReader",
+    "KubernetesReaderV2",
+    "KubernetesSdkReaderV2",
     "KubernetesTimeoutError",
     "KubernetesTransientError",
     "NamespaceName",
     "PodLogQuery",
     "PodTarget",
     "PodTargetResolver",
+    "MultiPodResolverV2",
+    "MultiPodSnapshotV2",
+    "PodSnapshotV2",
     "ResolvedPod",
     "ResourceName",
     "build_kubernetes_reader",
+    "build_kubernetes_reader_v2",
 ]

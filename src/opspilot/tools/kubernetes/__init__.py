@@ -23,6 +23,10 @@ from opspilot.tools.kubernetes.registry import (
     build_kubernetes_registry,
     kubernetes_tool_definitions,
 )
+from opspilot.tools.kubernetes.v2_registry import (
+    build_kubernetes_registry_v2,
+    kubernetes_v2_tool_definitions,
+)
 
 __all__ = [
     "ContainerStatusOutput",
@@ -43,5 +47,7 @@ __all__ = [
     "ProbeOutput",
     "ResourceRequirementsOutput",
     "build_kubernetes_registry",
+    "build_kubernetes_registry_v2",
     "kubernetes_tool_definitions",
+    "kubernetes_v2_tool_definitions",
 ]

@@ -9,11 +9,15 @@ from opspilot.storage.models import (
     EvidenceRecord,
     LLMCallRecord,
     PromptVersionRecord,
+    PlanningRoundRecord,
     ToolCallRecord,
 )
 from opspilot.storage.model_audit import SQLAlchemyModelAuditRepository
 from opspilot.storage.execution import SQLAlchemyExecutionRepository
 from opspilot.storage.runtime import InMemoryRuntimeRepository, SQLAlchemyRuntimeRepository
+from opspilot.storage.planning_rounds import (
+    InMemoryPlanningRoundRepository, PlanningRoundV2, SQLAlchemyPlanningRoundRepository,
+)
 
 __all__ = [
     "AgentRunRecord",
@@ -24,6 +28,10 @@ __all__ = [
     "EvidenceRecord",
     "LLMCallRecord",
     "PromptVersionRecord",
+    "PlanningRoundRecord",
+    "PlanningRoundV2",
+    "InMemoryPlanningRoundRepository",
+    "SQLAlchemyPlanningRoundRepository",
     "SQLAlchemyModelAuditRepository",
     "SQLAlchemyExecutionRepository",
     "SQLAlchemyRuntimeRepository",

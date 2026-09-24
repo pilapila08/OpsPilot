@@ -8,6 +8,7 @@ from opspilot.execution.repository import (
     RecordedToolAttempt,
     ToolAttemptView,
 )
+from opspilot.execution.v2 import V2RoundExecution, V2RoundExecutor
 
 __all__ = [
     "ExecutionRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "RecordedToolAttempt",
     "ToolAttempt",
     "ToolAttemptView",
+    "V2RoundExecution", "V2RoundExecutor",
 ]

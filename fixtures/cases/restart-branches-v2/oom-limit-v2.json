@@ -1,0 +1,71 @@
+{
+  "schema_version": 2,
+  "case_id": "oom_limit_v2",
+  "title": "OOMKilled with and without a time-aligned memory peak",
+  "query": "Why is api restarting?",
+  "trace_id": "trace_oom_memory_v2",
+  "target": {"namespace": "opspilot-fixtures", "kind": "deployment", "resource": "api"},
+  "candidate_families": ["oom_killed", "liveness_probe_failed"],
+  "allowed_tools": ["k8s.get_pod_status", "k8s.get_deployment", "prometheus.query_memory"],
+  "allowed_sources": ["kubernetes", "prometheus"],
+  "allowed_evidence_sources": ["kubernetes_oom_termination", "kubernetes_memory_limit", "prometheus_memory"],
+  "allowed_resource_names": ["api", "api-001"],
+  "branches": [
+    {
+      "branch_id": "peak_present",
+      "fault_family": "oom_killed",
+      "steps": [
+        {"phase": "fault", "invocation": {"call_id": "call_status", "tool": "k8s.get_pod_status", "arguments": {"namespace": "opspilot-fixtures", "workload_name": "api"}}, "response_file": "responses/oom/status.json"},
+        {"phase": "fault", "invocation": {"call_id": "call_oom_deployment", "tool": "k8s.get_deployment", "arguments": {"namespace": "opspilot-fixtures", "deployment_name": "api"}}, "response_file": "responses/oom/deployment.json"},
+        {"phase": "fault", "invocation": {"call_id": "call_oom_memory", "tool": "prometheus.query_memory", "arguments": {"namespace": "opspilot-fixtures", "workload_name": "api", "pod_name": "api-001", "container_name": "api"}}, "response_file": "responses/oom/memory.json"}
+      ],
+      "evidence": [
+        {"evidence_id": "ev_case_oom", "trace_id": "trace_oom_memory_v2", "tool_call_id": "call_status", "source": "kubernetes_oom_termination", "resource": "opspilot-fixtures/api-001:api", "observed_at": "2026-09-23T09:59:59Z", "collected_at": "2026-09-23T10:00:30Z", "content": "Container last terminated with OOMKilled.", "source_confidence": 1.0, "attributes": [{"key": "termination_reason", "value": "OOMKilled"}]},
+        {"evidence_id": "ev_case_limit", "trace_id": "trace_oom_memory_v2", "tool_call_id": "call_oom_deployment", "source": "kubernetes_memory_limit", "resource": "opspilot-fixtures/deployment/api:api", "observed_at": "2026-09-23T10:00:30Z", "collected_at": "2026-09-23T10:00:30Z", "content": "Deployment declares a 134217728 byte memory limit.", "source_confidence": 1.0, "attributes": [{"key": "memory_limit_bytes", "value": 134217728}]},
+        {"evidence_id": "ev_case_peak", "trace_id": "trace_oom_memory_v2", "tool_call_id": "call_oom_memory", "source": "prometheus_memory", "resource": "opspilot-fixtures/api-001:api", "observed_at": "2026-09-23T09:59:55Z", "collected_at": "2026-09-23T10:00:30Z", "content": "Prometheus reported a bounded memory sample.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 125829120.0}, {"key": "metric_unit", "value": "bytes"}]}
+      ],
+      "required_signals": [
+        {"signal": "oom.termination_reason", "evidence_id": "ev_case_oom"},
+        {"signal": "oom.memory_limit", "evidence_id": "ev_case_limit"},
+        {"signal": "oom.memory_peak", "evidence_id": "ev_case_peak"}
+      ],
+      "contradiction_signals": ["oom.nonmatching_container", "oom.peak_outside_window"],
+      "expected_diagnosis": {
+        "status": "COMPLETED",
+        "root_cause": "Container opspilot-fixtures/api-001:api was OOMKilled while observed memory reached 125829120 bytes near its 134217728 byte limit.",
+        "recommendation": "Review the container's memory demand and configured limit before changing resources.",
+        "claim": {"claim_id": "claim_oom_limit", "text": "The container reached its configured memory limit near an OOMKilled termination.", "evidence_ids": ["ev_case_oom", "ev_case_limit", "ev_case_peak"], "inference_confidence": 0.9},
+        "verification": {"claim_id": "claim_oom_limit", "supported": true, "verification_confidence": 0.9, "checked_evidence_ids": ["ev_case_oom", "ev_case_limit", "ev_case_peak"], "missing_evidence": [], "contradictions": [], "rationale": "Termination reason, matching limit and same-container time-aligned memory are present."}
+      },
+      "recovery": null
+    },
+    {
+      "branch_id": "peak_missing",
+      "fault_family": "oom_killed",
+      "steps": [
+        {"phase": "fault", "invocation": {"call_id": "call_status", "tool": "k8s.get_pod_status", "arguments": {"namespace": "opspilot-fixtures", "workload_name": "api"}}, "response_file": "responses/oom/status.json"},
+        {"phase": "fault", "invocation": {"call_id": "call_oom_deployment", "tool": "k8s.get_deployment", "arguments": {"namespace": "opspilot-fixtures", "deployment_name": "api"}}, "response_file": "responses/oom/deployment.json"},
+        {"phase": "fault", "invocation": {"call_id": "call_oom_memory", "tool": "prometheus.query_memory", "arguments": {"namespace": "opspilot-fixtures", "workload_name": "api", "pod_name": "api-001", "container_name": "api"}}, "response_file": "responses/oom/memory_missing.json"}
+      ],
+      "evidence": [
+        {"evidence_id": "ev_case_oom", "trace_id": "trace_oom_memory_v2", "tool_call_id": "call_status", "source": "kubernetes_oom_termination", "resource": "opspilot-fixtures/api-001:api", "observed_at": "2026-09-23T09:59:59Z", "collected_at": "2026-09-23T10:00:30Z", "content": "Container last terminated with OOMKilled.", "source_confidence": 1.0, "attributes": [{"key": "termination_reason", "value": "OOMKilled"}]},
+        {"evidence_id": "ev_case_limit", "trace_id": "trace_oom_memory_v2", "tool_call_id": "call_oom_deployment", "source": "kubernetes_memory_limit", "resource": "opspilot-fixtures/deployment/api:api", "observed_at": "2026-09-23T10:00:30Z", "collected_at": "2026-09-23T10:00:30Z", "content": "Deployment declares a 134217728 byte memory limit.", "source_confidence": 1.0, "attributes": [{"key": "memory_limit_bytes", "value": 134217728}]},
+        {"evidence_id": "ev_case_missing", "trace_id": "trace_oom_memory_v2", "tool_call_id": "call_oom_memory", "source": "prometheus_memory", "resource": "opspilot-fixtures/api-001:api", "observed_at": "2026-09-23T10:00:30Z", "collected_at": "2026-09-23T10:00:30Z", "content": "Prometheus has no fresh metric samples.", "source_confidence": 1.0, "attributes": [{"key": "sample_status", "value": "missing"}]}
+      ],
+      "required_signals": [
+        {"signal": "oom.termination_reason", "evidence_id": "ev_case_oom"},
+        {"signal": "oom.memory_limit", "evidence_id": "ev_case_limit"},
+        {"signal": "memory_peak", "evidence_id": null}
+      ],
+      "contradiction_signals": [],
+      "expected_diagnosis": {
+        "status": "PARTIAL",
+        "root_cause": "OOMKilled or memory pressure is not yet established as a limit-related cause.",
+        "recommendation": "Collect an exact container memory limit and fresh Pod-scoped samples around termination.",
+        "claim": {"claim_id": "claim_oom_limit", "text": "The available observations do not yet prove a limit-related OOM cause.", "evidence_ids": ["ev_case_oom", "ev_case_limit"], "inference_confidence": 0.0},
+        "verification": {"claim_id": "claim_oom_limit", "supported": false, "verification_confidence": 0.0, "checked_evidence_ids": ["ev_case_oom", "ev_case_limit", "ev_case_missing"], "missing_evidence": [{"requirement": "memory_peak", "reason": "No fresh same-container memory sample overlaps the OOM termination."}], "contradictions": [], "rationale": "The required OOM limit relationship is incomplete or contradicted."}
+      },
+      "recovery": null
+    }
+  ]
+}

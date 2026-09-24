@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "opspilot-fixtures",
+    "name": "api",
+    "generation": 1,
+    "replicas": 1,
+    "ready_replicas": 0,
+    "unavailable_replicas": 1,
+    "selector": {"app": "api"},
+    "containers": [{
+      "name": "api",
+      "image": "example.invalid/api:v1",
+      "liveness_probe": null,
+      "readiness_probe": null,
+      "startup_probe": null,
+      "resources": {"requests": {}, "limits": {"memory": "128Mi"}},
+      "environment": []
+    }]
+  },
+  "metadata": {
+    "call_id": "call_oom_deployment",
+    "tool_name": "k8s.get_deployment",
+    "source": "kubernetes",
+    "duration_ms": 11,
+    "tool_version": "v1"
+  },
+  "error": null
+}

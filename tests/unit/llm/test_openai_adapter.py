@@ -28,6 +28,7 @@ from opspilot.llm import (
     build_openai_structured_client,
 )
 from opspilot.llm.strict_wire import StrictJsonEnvelope
+from opspilot.planning.v2 import PlanDecisionV2
 
 
 class SampleOutput(StrictSchema):
@@ -122,6 +123,37 @@ def test_openai_adapter_validates_json_array_steps_in_plan_fallback() -> None:
         "namespace": "team-a", "pod_name": "api",
     }
     assert responses.calls[0]["text_format"] is StrictJsonEnvelope
+
+
+def test_v2_decision_uses_strict_wire_and_domain_validation() -> None:
+    decision = {
+        "schema_version": 2, "round_no": 1, "action": "continue",
+        "based_on_evidence_ids": [],
+        "calls": [{
+            "call_id": "call_status", "tool": "k8s.get_pod_status",
+            "arguments": {"namespace": "team-a", "pod_name": "api"},
+            "reason": "Read status",
+        }],
+    }
+    responses = FakeResponses(SimpleNamespace(
+        output_parsed={"payload_json": json.dumps(decision)},
+        usage=SimpleNamespace(input_tokens=2, output_tokens=3),
+        id="resp_v2", model="configured-model",
+    ))
+    result = asyncio.run(
+        OpenAIStructuredModelClient(responses).complete(_request(), PlanDecisionV2)
+    )
+    assert result.output.calls[0].call_id == "call_status"
+    assert responses.calls[0]["text_format"] is StrictJsonEnvelope
+
+    decision["calls"] = []
+    invalid = FakeResponses(SimpleNamespace(
+        output_parsed={"payload_json": json.dumps(decision)},
+        usage=SimpleNamespace(input_tokens=2, output_tokens=3),
+        id="resp_invalid_v2", model="configured-model",
+    ))
+    with pytest.raises(ModelSchemaError):
+        asyncio.run(OpenAIStructuredModelClient(invalid).complete(_request(), PlanDecisionV2))
 
 
 def test_domain_wire_schema_is_strict_and_has_no_dynamic_object() -> None:

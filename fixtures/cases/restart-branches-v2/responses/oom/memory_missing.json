@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "opspilot-fixtures",
+    "workload_name": "api",
+    "pod_name": "api-001",
+    "container_name": "api",
+    "metric": "memory",
+    "unit": "bytes",
+    "status": "missing",
+    "observed_at": "2026-09-23T10:00:30Z",
+    "samples": []
+  },
+  "metadata": {
+    "call_id": "call_oom_memory",
+    "tool_name": "prometheus.query_memory",
+    "source": "prometheus",
+    "duration_ms": 11,
+    "tool_version": "v2"
+  },
+  "error": null
+}

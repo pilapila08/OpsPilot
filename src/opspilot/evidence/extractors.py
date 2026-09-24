@@ -17,6 +17,10 @@ from opspilot.tools.kubernetes.models import (
     PodLogsOutput,
     PodStatusOutput,
 )
+from opspilot.tools.kubernetes.v2_models import (
+    EndpointsOutputV2, IngressOutputV2, ResourceUsageOutputV2,
+    ServiceOutputV2,
+)
 from opspilot.tools.models import ToolInvocation, ToolResponse
 
 _BOOT = re.compile(
@@ -82,6 +86,26 @@ class EvidenceExtractorRegistry:
                 if deployment.name != invocation.arguments.get("deployment_name"):
                     raise EvidenceExtractionError("Deployment identity differs from invocation")
                 observations = _deployment(deployment, collected_at)
+            elif invocation.tool == "k8s.get_service":
+                service = ServiceOutputV2.model_validate_json(payload)
+                if service.name != invocation.arguments.get("service_name"):
+                    raise EvidenceExtractionError("Service identity differs from invocation")
+                observations = _service_v2(service, collected_at)
+            elif invocation.tool == "k8s.get_endpoints":
+                endpoints = EndpointsOutputV2.model_validate_json(payload)
+                if endpoints.service_name != invocation.arguments.get("service_name"):
+                    raise EvidenceExtractionError("EndpointSlice target differs from invocation")
+                observations = _endpoints_v2(endpoints, collected_at)
+            elif invocation.tool == "k8s.get_ingress":
+                ingress = IngressOutputV2.model_validate_json(payload)
+                if ingress.name != invocation.arguments.get("ingress_name"):
+                    raise EvidenceExtractionError("Ingress identity differs from invocation")
+                observations = _ingress_v2(ingress, collected_at)
+            elif invocation.tool == "k8s.get_resource_usage":
+                usage = ResourceUsageOutputV2.model_validate_json(payload)
+                if usage.deployment_name != invocation.arguments.get("deployment_name"):
+                    raise EvidenceExtractionError("Metrics target differs from invocation")
+                observations = _resource_usage_v2(usage, collected_at)
             else:
                 raise EvidenceExtractionError("no Evidence extractor exists for Tool")
         except ValidationError:
@@ -239,6 +263,81 @@ def _deployment(data: DeploymentOutput, collected_at: datetime) -> tuple[_Observ
                 attributes=tuple(attributes),
             )
         )
+    return tuple(observations)
+
+
+def _service_v2(data: ServiceOutputV2, collected_at: datetime) -> tuple[_Observation, ...]:
+    base = f"{data.namespace}/service/{data.name}"
+    if not data.ports:
+        return (_Observation(
+            source="kubernetes_service", resource=base, observed_at=collected_at,
+            content="Service has no declared ports.",
+            attributes=(
+                EvidenceAttribute(key="service_port_count", value=0),
+                EvidenceAttribute(key="selector_count", value=len(data.selector)),
+            ),
+        ),)
+    return tuple(_Observation(
+        source="kubernetes_service", resource=base, observed_at=collected_at,
+        content=f"Service port {item.port} routes to a declared target port.",
+        attributes=(
+            EvidenceAttribute(key="service_port", value=item.port),
+            EvidenceAttribute(key="target_port", value=item.target_port),
+            EvidenceAttribute(key="selector_count", value=len(data.selector)),
+        ),
+    ) for item in data.ports)
+
+
+def _endpoints_v2(data: EndpointsOutputV2, collected_at: datetime) -> tuple[_Observation, ...]:
+    endpoints = [item for group in data.slices for item in group.endpoints]
+    ready = sum(item.ready is True for item in endpoints)
+    serving = sum(item.serving is True for item in endpoints)
+    return (_Observation(
+        source="kubernetes_endpoints",
+        resource=f"{data.namespace}/service/{data.service_name}",
+        observed_at=min(data.observed_at, collected_at),
+        content=f"EndpointSlices report {ready} ready endpoints out of {len(endpoints)} observed.",
+        attributes=(
+            EvidenceAttribute(key="endpoint_count", value=len(endpoints)),
+            EvidenceAttribute(key="ready_endpoint_count", value=ready),
+            EvidenceAttribute(key="serving_endpoint_count", value=serving),
+            EvidenceAttribute(key="endpoint_snapshot_truncated", value=data.truncated),
+        ),
+    ),)
+
+
+def _ingress_v2(data: IngressOutputV2, collected_at: datetime) -> tuple[_Observation, ...]:
+    return tuple(_Observation(
+        source="kubernetes_ingress",
+        resource=f"{data.namespace}/ingress/{data.name}",
+        observed_at=collected_at,
+        content="Ingress route points to a Service backend.",
+        attributes=(
+            EvidenceAttribute(key="backend_service", value=route.service_name),
+            EvidenceAttribute(key="backend_port", value=route.service_port),
+            EvidenceAttribute(key="route_path", value=route.path),
+        ),
+    ) for route in data.routes)
+
+
+def _resource_usage_v2(
+    data: ResourceUsageOutputV2, collected_at: datetime,
+) -> tuple[_Observation, ...]:
+    observations: list[_Observation] = []
+    for pod in data.usages:
+        for container in pod.containers:
+            observations.append(_Observation(
+                source="kubernetes_metrics",
+                resource=f"{data.namespace}/{pod.pod_name}:{container.name}",
+                observed_at=min(pod.sampled_at, collected_at),
+                content="Metrics API reported a fresh container resource sample.",
+                attributes=(
+                    EvidenceAttribute(key="cpu_quantity", value=container.cpu),
+                    EvidenceAttribute(key="memory_quantity", value=container.memory),
+                    EvidenceAttribute(key="deployment_generation", value=data.snapshot.deployment_generation),
+                    EvidenceAttribute(key="rollout_ambiguous", value=data.snapshot.rollout_ambiguous),
+                ),
+            ))
     return tuple(observations)
 
 

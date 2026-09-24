@@ -102,10 +102,12 @@ class OpenAIStructuredModelClient:
             }
             for message in request.messages
         ]
+        from opspilot.planning.v2 import PlanDecisionV2
+
         wire_model = cast(
             type[BaseModel],
             StrictJsonEnvelope
-            if output_model in {ExecutionPlanV1, DiagnosisDraftV1}
+            if output_model in {ExecutionPlanV1, DiagnosisDraftV1, PlanDecisionV2}
             else output_model,
         )
         call_arguments: dict[str, Any] = {

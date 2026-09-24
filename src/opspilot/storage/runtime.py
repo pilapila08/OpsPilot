@@ -99,7 +99,7 @@ class SQLAlchemyRuntimeRepository:
                 attempt_no=run.attempt_no,
                 status=run.state.status.value,
                 state_payload=run.state.model_dump(mode="json"),
-                runtime_version="v1",
+                runtime_version=run.runtime_version,
             )
         )
         self._commit()
@@ -113,6 +113,7 @@ class SQLAlchemyRuntimeRepository:
             run_id=row.id,
             task_id=row.task_id,
             attempt_no=row.attempt_no,
+            runtime_version=cast(Literal["v1", "v2"], row.runtime_version),
             state=state,
         )
 

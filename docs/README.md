@@ -21,6 +21,7 @@
 - [Storage Model](architecture/storage-model.md)
 - [V0 Contract Baseline](architecture/v0-contract-baseline.md)
 - [V1 Agent MVP](architecture/v1-agent-mvp.md)
+- [V2 多故障诊断架构与 Evidence 矩阵](architecture/v2-diagnosis-expansion.md)
 - [Kubernetes Tools V1](architecture/kubernetes-tools-v1.md)
 - [安全边界](architecture/security-boundary.md)
 - [阶段路线图](roadmap/README.md)

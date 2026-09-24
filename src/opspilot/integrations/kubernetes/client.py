@@ -242,6 +242,21 @@ def build_kubernetes_reader(
 ) -> KubernetesSdkReader:
     """Create an isolated SDK client without modifying global configuration."""
 
+    configuration = build_kubernetes_configuration(settings)
+    api_client = client.ApiClient(configuration=configuration)
+    return KubernetesSdkReader(
+        core_api=client.CoreV1Api(api_client),
+        apps_api=client.AppsV1Api(api_client),
+        api_client=api_client,
+        request_timeout_seconds=settings.request_timeout_seconds,
+    )
+
+
+def build_kubernetes_configuration(
+    settings: KubernetesClientSettings,
+) -> Any:
+    """Build one explicit, isolated SDK configuration for a reader version."""
+
     configuration = client.Configuration()
     configuration.debug = False
     try:
@@ -271,13 +286,7 @@ def build_kubernetes_reader(
             "Kubernetes client configuration could not be loaded"
         ) from None
 
-    api_client = client.ApiClient(configuration=configuration)
-    return KubernetesSdkReader(
-        core_api=client.CoreV1Api(api_client),
-        apps_api=client.AppsV1Api(api_client),
-        api_client=api_client,
-        request_timeout_seconds=settings.request_timeout_seconds,
-    )
+    return configuration
 
 
 def _translate_sdk_error(

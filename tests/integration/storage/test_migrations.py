@@ -22,6 +22,7 @@ CORE_TABLES = {
     "evidence",
     "diagnosis_results",
     "prompt_versions",
+    "planning_rounds",
 }
 
 
@@ -131,4 +132,28 @@ def test_tool_attempt_migration_backfills_existing_calls_and_downgrades(tmp_path
             "SELECT logical_call_id, attempt_no FROM tool_calls WHERE id = 'tool_legacy'"
         )).one()
         assert row == ("tool_legacy", 1)
+    engine.dispose()
+
+
+def test_v2_round_migration_preserves_existing_v1_run(tmp_path: Path) -> None:
+    database_path = tmp_path / "v1-compat.db"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = migration_config(database_url)
+    command.upgrade(config, "20260923_0003")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO diagnosis_tasks (id, user_query, namespace, status) "
+            "VALUES ('task_legacy', 'diagnose api', 'team-a', 'COMPLETED')"
+        ))
+        connection.execute(text(
+            "INSERT INTO agent_runs (id, task_id, trace_id, attempt_no, status, state_payload, runtime_version) "
+            "VALUES ('run_legacy', 'task_legacy', 'trace_legacy', 1, 'COMPLETED', '{}', 'v1')"
+        ))
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT runtime_version, status FROM agent_runs WHERE id = 'run_legacy'"
+        )).one() == ("v1", "COMPLETED")
+        assert connection.execute(text("SELECT count(*) FROM planning_rounds")).scalar_one() == 0
     engine.dispose()

@@ -35,6 +35,7 @@ class RunSnapshot(StrictSchema):
     run_id: str = Field(min_length=3, max_length=128, pattern=_ID)
     task_id: str = Field(min_length=3, max_length=128, pattern=_ID)
     attempt_no: int = Field(default=1, ge=1)
+    runtime_version: Literal["v1", "v2"] = "v1"
     state: AgentState
 
     @model_validator(mode="after")
@@ -54,7 +55,7 @@ class ResultSnapshot(StrictSchema):
     confidence: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
     claims_payload: tuple[dict[str, JsonValue], ...] = ()
     verification_payload: dict[str, JsonValue]
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
 
 
 @runtime_checkable

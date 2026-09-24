@@ -84,6 +84,7 @@ class AgentState(StrictSchema):
         AgentStatus.PLANNING: frozenset(
             {
                 AgentStatus.EXECUTING,
+                AgentStatus.VERIFYING,
                 AgentStatus.FAILED,
                 AgentStatus.PARTIAL,
                 AgentStatus.POLICY_REJECTED,

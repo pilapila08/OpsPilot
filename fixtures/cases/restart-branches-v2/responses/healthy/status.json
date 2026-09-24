@@ -1,0 +1,34 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "opspilot-fixtures",
+    "pod_name": "api-001",
+    "phase": "Running",
+    "conditions": [{
+      "type": "Ready",
+      "status": "True",
+      "reason": null,
+      "message": null,
+      "last_transition_time": "2026-09-23T09:59:40Z"
+    }],
+    "containers": [{
+      "name": "api",
+      "ready": true,
+      "restart_count": 0,
+      "state": "running",
+      "reason": null,
+      "last_exit_code": null,
+      "last_reason": null,
+      "last_started_at": "2026-09-23T09:59:20Z",
+      "last_finished_at": null
+    }]
+  },
+  "metadata": {
+    "call_id": "call_status",
+    "tool_name": "k8s.get_pod_status",
+    "source": "kubernetes",
+    "duration_ms": 9,
+    "tool_version": "v1"
+  },
+  "error": null
+}

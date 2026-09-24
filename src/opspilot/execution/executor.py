@@ -15,7 +15,8 @@ from opspilot.evidence import EvidenceExtractionError, EvidenceExtractorRegistry
 from opspilot.evidence.models import Evidence
 from opspilot.execution.models import ExecutionSummary, ToolAttempt
 from opspilot.execution.repository import ExecutionPersistenceError, ExecutionRepository
-from opspilot.planning import PlanValidator, ValidatedPlanV1
+from opspilot.planning.models import ValidatedPlanV1
+from opspilot.planning.validator import PlanValidator
 from opspilot.tools.models import ToolInvocation, ToolMetadata, ToolResponse, ToolRiskLevel
 from opspilot.tools.registry import ToolNotRegisteredError, ToolRegistry
 

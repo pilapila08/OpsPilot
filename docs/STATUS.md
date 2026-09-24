@@ -1,9 +1,9 @@
 # Project Status
 
 - Updated: 2026-09-23
-- Current phase: V1 Agent MVP（Offline 与 Live 均通过；故障到恢复闭环已在真实集群完整验证）
-- Current task: `V1-008-fastapi-live-acceptance`（Done）
-- Repository state: V0 已验收并冻结为 v0.1；V1-008 已完成验收，包含真实 Live 发现的 Schema 与日志边界修复
+- Current phase: V2 诊断能力扩展（有界多轮 Runtime、Kubernetes V2 与 Prometheus/OOM 纵向切片已实现）
+- Current task: `V2-006-readiness-failure`（In Progress）
+- Repository state: V0 契约 v0.1 已冻结；V1 Offline/Live 与修复侧验收完成；V2-001 已形成版本化架构、ADR 与工作单
 
 ## 已完成
 
@@ -60,23 +60,34 @@
 - 2026-09-23 在已配置的真实集群环境独立复跑 `pytest -m live`：1 passed（43.14s）。五个只读 Tool 与 Live Runtime 端到端诊断通过，最终 `verification.supported=true`。默认离线 285 passed、1 skipped，strict mypy 122 文件通过。
 - 2026-09-23 修复侧核验完成：应用 `fixed-deployment.json` 后 rollout 成功，Pod `1/1 Running`、`Ready=True`、`restartCount=0`、`lastState={}`，90 秒后复检仍为 0；新 Pod 无 `Killing` 事件，唯一 `Startup probe failed` 在 40 秒预算内被容忍。结果与 Case 恢复 Ground Truth（Running/ready/max_restart_count 0）一致。
 - fixture namespace 已清理，只读 ServiceAccount、Role、RoleBinding 与 token Secret 随之删除，残留资源检查为空。
+- V2-001 完成：新增 V2 多故障架构与八类故障 Evidence/Tool/反证矩阵，接受 ADR 0005 的有界观察驱动多轮规划；V2-002 至 V2-012 详细工作单已拆分。V1 代码、Case 和 Replay 基线未改。
+- V2-002 完成：独立 CaseDefinitionV2、显式版本 Loader、精确 ToolInvocation Replay 与八类故障/四类目标的 V2 Router 已实现；namespace 不由模型覆盖。
+- 同症状 fixture 覆盖 OOM、probe 缺证据与健康反证三条分支；默认全量 317 passed、1 skipped（opt-in Live），strict mypy 127 文件通过。V2 多轮 Runtime 尚未实现。
+- V2-003 完成：独立 PlanDecisionV2、结构化观察摘要、strict wire Planner、逐轮 Validator、只读 Executor 与四轮上限 Runtime；全 Run 预算、跨轮去重、无进展终止和当前 Trace Verifier 门控已接通。
+- additive 0004 迁移记录轮次快照/hash/Prompt 版本与批准调用，旧 V1 Run 不需回填。相同 Intent 的 OOM/Error 观察分别驱动 Deployment/Events 调用；fake Verifier 仅证明 Partial 边界，不代表具体故障根因已实现。全量 341 passed、1 skipped，strict mypy 138 文件通过。
+- V2-004 完成：四个新 Risk 0 Kubernetes Tool 读取 Service、EndpointSlice、Ingress 与 Metrics API；严格 Schema、限量、采样新鲜度、独立错误分类与 Evidence provenance 已覆盖。多 Pod 快照保留 UID/resourceVersion/generation，selector 响应侧校验，截断或 rollout 歧义不选首个 Pod。
+- V2 观察摘要现在只投影经白名单校验的类型化事实，Tool Evidence 总量受 100 条契约约束；最小 RBAC 与显式 opt-in Live 测试已写入 `docs/architecture/kubernetes-tools-v2.md`。默认全量 352 passed、2 skipped（V1/V2 Live 均未启用），strict mypy 147 文件通过。
+- V2-005 完成：固定 HTTPS Prometheus Reader 与 CPU/内存/延迟/错误率四个只读 Tool 已加入；空/陈旧/非法数值与权限/超时边界有回归。V2-only OOM Evidence 与确定性 Verifier 以同 Pod/container 的 OOMKilled、内存限额和终止前峰值约束 supported，缺失或冲突保留 Partial。
+- `oom-limit-v2.json` 的峰值存在/缺失分支经完整 SQLite Replay/Runtime/审计通过；原有 OOM/Probe 同症状动态 Tool 分支和 V1 基线仍通过。默认全量 361 passed、3 skipped（含未启用的 Prometheus Live），strict mypy 154 文件通过。真实 Prometheus smoke 尚未执行。
 
 ## 正在进行
 
-- 无。V1-008 已完成：离线验收、真实集群 Live 诊断、修复侧核验与清理全部通过。
+- V2-006 正在进行：V2-only Pod Ready condition、readiness Event 与 Deployment probe Evidence 已实现且不影响 V1；默认全量 363 passed、3 skipped，strict mypy 155 文件通过。EndpointSlice 到 Pod 关联、子因 Verifier、四分支 Replay Case 与恢复快照尚待完成，不能验收为 Done。
 
 ## 下一步
 
-1. 拆分 V2 工作单，保持 V1 只读边界。
+1. 继续 V2-006：先补 EndpointSlice/Pod 关联与端口/路径证据，再实现保守的 Readiness 子因 Verifier 和正反例 Case。
+2. 随后按工作单扩充其余故障规则与 Loki/Git 数据源。
 
 ## 已知风险与待决问题
 
-- V1 只支持单副本 Deployment 到单 Pod 的确定性解析；多副本和滚动发布选择留到 V2。
+- V1 仍只支持单副本 Deployment 到单 Pod 的确定性解析；V2 多副本快照已实现，但尚未在真实集群验证。
 - Evidence 原始结果的存储格式、压缩和保留周期尚未确定。
 - 首次 `ExecutionPlanV1` strict Schema 被真实端点拒收；ADR 0004 已改为扁平封套。后续真实运行已成功完成 Planner 和 Diagnosis，因此此项不再是当前阻断；官方 OpenAI 端点未直接验证。
 - SDK 36.0.3 曾将 Previous Logs 字节变成 `repr` 字符串，导致缺少日志 Evidence；Reader 原始字节解码修复后，真实 Live smoke 已通过。外部边界的真实响应形态仍需持续保留专门回归测试。
 - V1 API 无认证且进程内队列不提供崩溃恢复，Live smoke 成功不等于可以公开部署或声明生产可用。
+- V2 的 8 类故障、10+ Tool 和外部数据源仍是设计目标而非实现状态；Prometheus/Loki/Git/CI 接入须使用独立限权配置与真实形态边界测试。
 
 ## 阻塞项
 
-当前无阻塞项。V1-008 的修复侧核验与清理已完成，`docs/roadmap/v1-acceptance.md` 已登记真实结果。
+当前无阻塞项。V2-006 可按已接受的 V2 架构与 ADR 0005 开始。

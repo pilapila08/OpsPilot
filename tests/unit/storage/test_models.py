@@ -132,6 +132,7 @@ def test_metadata_contains_exact_core_tables() -> None:
         "evidence",
         "diagnosis_results",
         "prompt_versions",
+        "planning_rounds",
     }
 
 

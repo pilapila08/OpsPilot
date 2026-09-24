@@ -132,6 +132,36 @@ class AgentRunRecord(Base):
         back_populates="run",
         passive_deletes=True,
     )
+    planning_rounds: Mapped[list[PlanningRoundRecord]] = relationship(
+        back_populates="run", passive_deletes=True,
+    )
+
+
+class PlanningRoundRecord(Base):
+    __tablename__ = "planning_rounds"
+    __table_args__ = (
+        CheckConstraint("round_no BETWEEN 1 AND 4", name="round_no_valid"),
+        CheckConstraint("action IN ('continue', 'finish', 'partial')", name="action_valid"),
+        Index("ix_planning_rounds_run_round", "run_id", "round_no"),
+    )
+
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="RESTRICT"), primary_key=True,
+    )
+    round_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    prompt_version_id: Mapped[str] = mapped_column(
+        ForeignKey("prompt_versions.id", ondelete="RESTRICT"), nullable=False,
+    )
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_ids_payload: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    call_ids_payload: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False,
+    )
+
+    run: Mapped[AgentRunRecord] = relationship(back_populates="planning_rounds")
 
 
 class PromptVersionRecord(Base):

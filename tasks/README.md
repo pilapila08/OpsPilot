@@ -17,5 +17,17 @@
 | V1-006 | [CrashLoopBackOff Diagnosis 与基础 Verifier](V1-006-crashloop-diagnosis-verifier.md) | Done | V1-003、V1-005 |
 | V1-007 | [Runtime Orchestration 与 Offline E2E](V1-007-runtime-orchestration-offline-e2e.md) | Done | V1-004、V1-005、V1-006 |
 | V1-008 | [FastAPI、Live Smoke Test 与 V1 验收](V1-008-fastapi-live-acceptance.md) | Done | V1-007 |
+| V2-001 | [多故障架构与验收矩阵](V2-001-architecture-and-case-matrix.md) | Done | V1-008 |
+| V2-002 | [版本化 Case、Replay 与 Intent](V2-002-case-replay-and-intent-v2.md) | Done | V2-001 |
+| V2-003 | [有界观察驱动 Planner 与 Runtime](V2-003-bounded-observation-runtime.md) | Done | V2-002 |
+| V2-004 | [Kubernetes 拓扑、资源与多 Pod 只读 Tool](V2-004-kubernetes-topology-tools.md) | Done | V2-002 |
+| V2-005 | [Prometheus 指标与 OOMKilled](V2-005-prometheus-and-oom.md) | Done | V2-003、V2-004 |
+| V2-006 | [Readiness Probe Failure](V2-006-readiness-failure.md) | In Progress | V2-003、V2-004 |
+| V2-007 | [Liveness Probe Failure](V2-007-liveness-failure.md) | Planned | V2-003 |
+| V2-008 | [ImagePullBackOff](V2-008-image-pull-failure.md) | Planned | V2-003 |
+| V2-009 | [Loki 日志与延迟升高](V2-009-loki-and-latency.md) | Planned | V2-003、V2-005 |
+| V2-010 | [Git/CI 元数据与发布后故障](V2-010-git-cicd-post-deployment.md) | Planned | V2-003、V2-005 |
+| V2-011 | [Service 503 拓扑诊断](V2-011-service-503.md) | Planned | V2-003、V2-004、V2-005 |
+| V2-012 | [八类故障与多数据源阶段验收](V2-012-multi-fault-acceptance.md) | Planned | V2-005 至 V2-011 |
 
 任务状态使用：`Planned`、`Ready`、`In Progress`、`Blocked`、`Done`。

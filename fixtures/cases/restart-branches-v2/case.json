@@ -1,0 +1,283 @@
+{
+  "schema_version": 2,
+  "case_id": "restart_branches_v2",
+  "title": "One restart symptom, three evidence branches",
+  "query": "Why is api restarting?",
+  "trace_id": "trace_restart_branches_v2",
+  "target": {
+    "namespace": "opspilot-fixtures",
+    "kind": "deployment",
+    "resource": "api"
+  },
+  "candidate_families": ["oom_killed", "liveness_probe_failed"],
+  "allowed_tools": [
+    "k8s.get_pod_status",
+    "k8s.get_deployment",
+    "k8s.get_pod_events"
+  ],
+  "allowed_sources": ["kubernetes"],
+  "allowed_evidence_sources": [
+    "kubernetes_status",
+    "kubernetes_deployment",
+    "kubernetes_events"
+  ],
+  "allowed_resource_names": ["api", "api-001"],
+  "branches": [
+    {
+      "branch_id": "oom_branch",
+      "fault_family": "oom_killed",
+      "steps": [
+        {
+          "phase": "fault",
+          "invocation": {
+            "call_id": "call_status",
+            "tool": "k8s.get_pod_status",
+            "arguments": {
+              "namespace": "opspilot-fixtures",
+              "workload_name": "api"
+            }
+          },
+          "response_file": "responses/oom/status.json"
+        },
+        {
+          "phase": "fault",
+          "invocation": {
+            "call_id": "call_oom_deployment",
+            "tool": "k8s.get_deployment",
+            "arguments": {
+              "namespace": "opspilot-fixtures",
+              "deployment_name": "api"
+            }
+          },
+          "response_file": "responses/oom/deployment.json"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ev_oom_reason",
+          "trace_id": "trace_restart_branches_v2",
+          "tool_call_id": "call_status",
+          "source": "kubernetes_status",
+          "resource": "opspilot-fixtures/api-001",
+          "observed_at": "2026-09-23T10:00:00Z",
+          "collected_at": "2026-09-23T10:00:01Z",
+          "content": "The previous container terminated with reason OOMKilled.",
+          "source_confidence": 1.0,
+          "raw_result_ref": "raw_oom_status",
+          "attributes": [
+            {"key": "last_reason", "value": "OOMKilled"},
+            {"key": "last_exit_code", "value": 137}
+          ]
+        },
+        {
+          "evidence_id": "ev_memory_limit",
+          "trace_id": "trace_restart_branches_v2",
+          "tool_call_id": "call_oom_deployment",
+          "source": "kubernetes_deployment",
+          "resource": "opspilot-fixtures/deployment/api",
+          "observed_at": "2026-09-23T10:00:00Z",
+          "collected_at": "2026-09-23T10:00:02Z",
+          "content": "The container declares a memory limit of 128Mi.",
+          "source_confidence": 1.0,
+          "raw_result_ref": "raw_oom_deployment",
+          "attributes": [
+            {"key": "memory_limit", "value": "128Mi"}
+          ]
+        }
+      ],
+      "required_signals": [
+        {"signal": "oom.termination_reason", "evidence_id": "ev_oom_reason"},
+        {"signal": "oom.memory_limit", "evidence_id": "ev_memory_limit"}
+      ],
+      "contradiction_signals": ["oom.no_oom_termination"],
+      "expected_diagnosis": {
+        "status": "COMPLETED",
+        "root_cause": "The previous container was terminated with OOMKilled; its configured memory limit is 128Mi.",
+        "recommendation": "Inspect memory usage around the termination before changing the limit.",
+        "claim": {
+          "claim_id": "claim_oom_termination",
+          "text": "The previous container termination was OOMKilled.",
+          "evidence_ids": ["ev_oom_reason", "ev_memory_limit"],
+          "inference_confidence": 0.9
+        },
+        "verification": {
+          "claim_id": "claim_oom_termination",
+          "supported": true,
+          "verification_confidence": 0.9,
+          "checked_evidence_ids": ["ev_oom_reason", "ev_memory_limit"],
+          "missing_evidence": [],
+          "contradictions": [],
+          "rationale": "Termination reason and configured memory limit are directly observed; no undersized-limit cause is asserted."
+        }
+      },
+      "recovery": null
+    },
+    {
+      "branch_id": "probe_branch",
+      "fault_family": "liveness_probe_failed",
+      "steps": [
+        {
+          "phase": "fault",
+          "invocation": {
+            "call_id": "call_status",
+            "tool": "k8s.get_pod_status",
+            "arguments": {
+              "namespace": "opspilot-fixtures",
+              "workload_name": "api"
+            }
+          },
+          "response_file": "responses/probe/status.json"
+        },
+        {
+          "phase": "fault",
+          "invocation": {
+            "call_id": "call_probe_events",
+            "tool": "k8s.get_pod_events",
+            "arguments": {
+              "namespace": "opspilot-fixtures",
+              "workload_name": "api"
+            }
+          },
+          "response_file": "responses/probe/events.json"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ev_probe_restart",
+          "trace_id": "trace_restart_branches_v2",
+          "tool_call_id": "call_status",
+          "source": "kubernetes_status",
+          "resource": "opspilot-fixtures/api-001",
+          "observed_at": "2026-09-23T10:00:00Z",
+          "collected_at": "2026-09-23T10:00:01Z",
+          "content": "The container restarted twice and is waiting in CrashLoopBackOff.",
+          "source_confidence": 1.0,
+          "raw_result_ref": "raw_probe_status",
+          "attributes": [
+            {"key": "restart_count", "value": 2},
+            {"key": "container_state", "value": "CrashLoopBackOff"}
+          ]
+        },
+        {
+          "evidence_id": "ev_probe_event",
+          "trace_id": "trace_restart_branches_v2",
+          "tool_call_id": "call_probe_events",
+          "source": "kubernetes_events",
+          "resource": "opspilot-fixtures/api-001",
+          "observed_at": "2026-09-23T10:00:00Z",
+          "collected_at": "2026-09-23T10:00:02Z",
+          "content": "Kubelet reported liveness probe failures for this Pod.",
+          "source_confidence": 1.0,
+          "raw_result_ref": "raw_probe_events",
+          "attributes": [
+            {"key": "liveness_failure", "value": true}
+          ]
+        }
+      ],
+      "required_signals": [
+        {"signal": "liveness.restart", "evidence_id": "ev_probe_restart"},
+        {"signal": "liveness.failure_event", "evidence_id": "ev_probe_event"},
+        {"signal": "liveness.probe_configuration", "evidence_id": null}
+      ],
+      "contradiction_signals": ["liveness.ready_without_restart"],
+      "expected_diagnosis": {
+        "status": "PARTIAL",
+        "root_cause": "Liveness failures and restarts are observed, but the probe configuration is not yet known.",
+        "recommendation": "Read the Deployment probe settings before asserting a specific cause.",
+        "claim": {
+          "claim_id": "claim_liveness_partial",
+          "text": "The container restarted after reported liveness failures.",
+          "evidence_ids": ["ev_probe_restart", "ev_probe_event"],
+          "inference_confidence": 0.6
+        },
+        "verification": {
+          "claim_id": "claim_liveness_partial",
+          "supported": false,
+          "verification_confidence": 0.5,
+          "checked_evidence_ids": ["ev_probe_restart", "ev_probe_event"],
+          "missing_evidence": [
+            {
+              "requirement": "liveness.probe_configuration",
+              "reason": "The probe timing and failure window have not been observed."
+            }
+          ],
+          "contradictions": [],
+          "rationale": "Observed restarts are insufficient to prove why the liveness checks failed."
+        }
+      },
+      "recovery": null
+    },
+    {
+      "branch_id": "healthy_branch",
+      "fault_family": "liveness_probe_failed",
+      "steps": [
+        {
+          "phase": "fault",
+          "invocation": {
+            "call_id": "call_status",
+            "tool": "k8s.get_pod_status",
+            "arguments": {
+              "namespace": "opspilot-fixtures",
+              "workload_name": "api"
+            }
+          },
+          "response_file": "responses/healthy/status.json"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ev_healthy_status",
+          "trace_id": "trace_restart_branches_v2",
+          "tool_call_id": "call_status",
+          "source": "kubernetes_status",
+          "resource": "opspilot-fixtures/api-001",
+          "observed_at": "2026-09-23T10:00:00Z",
+          "collected_at": "2026-09-23T10:00:01Z",
+          "content": "The Pod is ready and the container has not restarted.",
+          "source_confidence": 1.0,
+          "raw_result_ref": "raw_healthy_status",
+          "attributes": [
+            {"key": "ready", "value": true},
+            {"key": "restart_count", "value": 0}
+          ]
+        }
+      ],
+      "required_signals": [
+        {"signal": "liveness.restart", "evidence_id": null},
+        {"signal": "liveness.ready_without_restart", "evidence_id": "ev_healthy_status"}
+      ],
+      "contradiction_signals": ["liveness.ready_without_restart"],
+      "expected_diagnosis": {
+        "status": "PARTIAL",
+        "root_cause": "The observed Pod is healthy; a liveness-triggered restart is not established.",
+        "recommendation": "Check whether the request refers to a different Pod or time window.",
+        "claim": {
+          "claim_id": "claim_healthy_pod",
+          "text": "The current Pod is ready with no restarts.",
+          "evidence_ids": ["ev_healthy_status"],
+          "inference_confidence": 0.9
+        },
+        "verification": {
+          "claim_id": "claim_healthy_pod",
+          "supported": false,
+          "verification_confidence": 0.9,
+          "checked_evidence_ids": ["ev_healthy_status"],
+          "missing_evidence": [
+            {
+              "requirement": "liveness.restart",
+              "reason": "No liveness-triggered restart was observed."
+            }
+          ],
+          "contradictions": [
+            {
+              "evidence_ids": ["ev_healthy_status"],
+              "reason": "A ready Pod with zero restarts contradicts this liveness failure hypothesis."
+            }
+          ],
+          "rationale": "Current structured status disproves a restart for this Pod."
+        }
+      },
+      "recovery": null
+    }
+  ]
+}
