@@ -1,6 +1,6 @@
 # V2-006: Readiness Probe Failure 诊断
 
-- Status: Ready
+- Status: Paused
 - Phase: V2
 - Depends on: V2-003, V2-004
 
@@ -55,4 +55,4 @@
 - 2026-09-23 已在 `V2EvidenceExtractorRegistry` 中增加 Pod `Ready` condition、经分类的 readiness failure Event 和 Deployment readiness probe 三类结构化 Evidence；事件原文不进入 Evidence content，V1 提取器保持不变。
 - 单元测试覆盖 V2 信号及 V1 不受影响；当前默认全量 363 passed、3 skipped（均为 opt-in Live），strict mypy 155 文件通过。
 - 尚缺 EndpointSlice 到具体 Pod 的关联 Evidence、端口/路径及依赖子因规则、确定性 Verifier、四条 Replay 分支与恢复快照；以上验收条件仍未勾选。
-- 2026-09-24 按用户优先级暂缓，保留已实现的 V2 Evidence 与未勾选验收项；后续从此处续做。
+- 2026-09-25 按当前范围决策暂缓，保留已实现的 V2 Evidence 与未勾选验收项；后续从此处续做。计数口径见 `docs/roadmap/v2-scope.md`。

@@ -29,5 +29,7 @@
 - [开发环境](development.md)
 - [诊断 Case Fixtures](../fixtures/README.md)
 - [当前状态](STATUS.md)
+- [V3 Runtime 交接（2026-09-25）](handoffs/2026-09-25-v3-runtime.md)
+- [V2 能力范围与矩阵](roadmap/v2-scope.md)
 - [架构决策](adr/README.md)
 - [任务清单](../tasks/README.md)

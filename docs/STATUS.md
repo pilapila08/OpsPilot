@@ -2,8 +2,9 @@
 
 - Updated: 2026-09-25
 - Current phase: V3 Runtime 工程化（Trace → Budget → Offline Demo）
-- Current task: `V3-003-offline-demo`（Ready）；V3-001、V3-002 已验收
-- Repository state: V0 契约 v0.1 已冻结；V1 Offline/Live 与修复侧验收完成；V2-001 已形成版本化架构、ADR 与工作单
+- Current task: V3-001、V3-002、V3-003 Done；P1 文档收口完成
+- Repository state: V0 契约 v0.1 已冻结；V1 已验收；V2 多轮 Runtime 与部分诊断切片保留，扩类暂缓；V3 Trace/Budget/Demo 已验收
+- Handoff: [2026-09-25 V3 Runtime 交接](handoffs/2026-09-25-v3-runtime.md)
 
 ## 已完成
 
@@ -71,18 +72,34 @@
 - `oom-limit-v2.json` 的峰值存在/缺失分支经完整 SQLite Replay/Runtime/审计通过；原有 OOM/Probe 同症状动态 Tool 分支和 V1 基线仍通过。默认全量 361 passed、3 skipped（含未启用的 Prometheus Live），strict mypy 154 文件通过。真实 Prometheus smoke 尚未执行。
 - V2-011 完成：固定 Service-scoped 503 指标、新增只读 Service membership Tool；Ingress/Service/EndpointSlice/Pod 标签聚合 Evidence 与确定性 Verifier 已覆盖无 ready 后端和稳定 selector 错配。端口异常经独立门槛识别，但因无网关侧 503 来源证明只给 Partial。`service-503-v2` 四条 Case 分支已走通 SQLite Replay；默认离线 382 passed、3 skipped，strict mypy 159 文件通过；可选 Live 未执行。
 
-## 正在进行
+## 近期交付与保留任务
 
 - V3-001 完成：本地 `python -m opspilot trace <trace_id>` 可按 Trace 读取 Run/轮次/LLM 尝试/Tool 重试/Evidence/Result。CLI 仅输出安全投影，SQLite 只读连接，不新增 HTTP 端点；决策见 ADR 0006。默认 398 passed、4 skipped，strict mypy 171 文件通过。
-- V3-002、V3-003 已先行建立工作单，按 Trace → Budget → Demo 依赖实施。
+- V3 三张工作单先行提交，按 Trace → Budget → Demo 依赖实施。
 - V3-002 完成：统一六维 BudgetManager、模型/Tool deadline 与失败 usage 记账，V1/V2 在 Planner 前准入。additive 0005 迁移保存首个 BudgetStop，Trace 可查维度/阶段/步骤/轮次与快照；零 Evidence 也生成无 Claim 的 schema 3 PARTIAL。决策见 ADR 0007；默认 425 passed、4 skipped，strict mypy 175 文件通过。
 
-- V2-010 正在进行：GitHub 只读 Reader、配置 allowlist、三个 Risk 0 Tool、无原文 diff 的 Evidence 与确定性发布/错误率时间线已实现。`release-failure-v2` 主分支通过 SQLite 全链路回放；故障早于发布、重叠发布、未知 commit、缺指标、重复样本与回滚恢复有单元反证。默认离线 `394 passed, 3 skipped`（opt-in Live），strict mypy 165 文件通过。运行中 Deployment 与 CI SHA 的可信绑定及反证 Case 回放仍待实现，故所有发布相关性结论保持 Partial。V2-006 已有 Pod Ready condition、readiness Event 与 Deployment probe Evidence，但 Verifier、四分支 Case 与恢复快照未完成，状态退回 Ready 待续。
+- V3-003 完成：`opspilot demo` 默认 CrashLoop 真实 Replay，`--scenario oom` 展示 V2 四轮；复用持久化 Trace，COMPLETED/预算 PARTIAL 可重复运行。默认 431 passed、4 skipped，strict mypy 177 文件通过；安装后脚本入口和本机 API Replay 已实跑。
+- V2-010 保持 In Progress：GitHub 只读 Reader、allowlist、三个 Risk 0 Tool、变更分类 Evidence 与发布/错误率时间线已实现。当前基线只有 `post_release_rise` 的 SQLite Case 回放，其他反证为单元测试；可信 revision/commit 绑定与反证分支仍待完成，所有发布相关性结论保持 Partial。
+
+## V2 有意收口与能力矩阵
+
+V2 优先保留五个方向（CrashLoop、Liveness、OOM、Service 503、发布后故障），暂停继续扩张到八类。有界多轮 Runtime 是本阶段主要技术增量，继续增加相似 Extractor/规则/fixture 的重复投入排在可审计 Runtime 工程之后。**五个优先方向不等于五类完成**；当前核实到的数量与 [八类能力矩阵](roadmap/v2-scope.md#八类故障的实际证据链) 一致：
+
+| 口径 | 已验证状态 |
+|---|---|
+| V2 Router 故障假设 | 8/8 |
+| 专用 V2 Verifier / 有 V2 Case 文件 | 3/8 / 4/8 |
+| V2 Runtime Replay 中至少一个特定子因受支持 | 2/8（OOM、Service 503） |
+| V2 故障诊断端到端 Live | 0/8；V1 CrashLoop Live 属历史独立验收 |
+| V2-006 | Paused：已有部分 Evidence；Verifier、Case 与恢复快照未完成 |
+
+每类的 Evidence / Extractor / Verifier / Case 分支 / Live 均在矩阵逐项列明；没有以“分类器认识名称”代替完成验收。
 
 ## 下一步
 
-1. 完成 V2-010 的 Deployment revision/commit 可信绑定与多分支 Case 回放；没有直接配置/行为证据时继续保持 Partial。
-2. V2-006 保留待续；有网关侧 503 来源指标时，可另开 V2-011 的端口因果增强任务。
+1. V3 P0 和 P1 已完成；下一位 AI 先读交接与能力矩阵，再核对同学是否有尚未推送的新分支。
+2. 可选 P2 留待后续工作单：先为运行中 imageID/digest 与 CI SHA 的可信映射写 ADR，再扩只读 Tool/Evidence 和反证 Case；没有因果证据时保留 Partial。
+3. V2-006 明确 Paused；恢复扩类需重新排优先级，不默认为下一任务。
 
 ## 已知风险与待决问题
 
@@ -96,4 +113,4 @@
 
 ## 阻塞项
 
-当前无阻塞项。V2-006 可按已接受的 V2 架构与 ADR 0005 开始。
+当前无阻塞项。真实 Kubernetes/Prometheus/GitHub Live 未在本机重跑；P2 可信发布绑定和额外 Prompt 版本治理不属于本次已完成范围。

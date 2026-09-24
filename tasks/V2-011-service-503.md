@@ -48,7 +48,8 @@
 
 - [x] 503 子因有独立 Evidence 门槛和反证。
 - [x] 多副本与 rollout 快照不制造错误拓扑结论。
-- [x] 只读 Replay 和可选隔离 Live smoke 通过。（Replay 已通过；可选 Live 未运行）
+- [x] 四条 Case 分支的只读 Replay 通过。
+- [ ] 可选隔离 Live smoke 尚未运行；不计入本次离线验收。
 - [x] 默认 pytest、strict mypy 与 STATUS 更新通过。
 
 ## 实施记录（2026-09-24）

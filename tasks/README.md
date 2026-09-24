@@ -22,17 +22,16 @@
 | V2-003 | [有界观察驱动 Planner 与 Runtime](V2-003-bounded-observation-runtime.md) | Done | V2-002 |
 | V2-004 | [Kubernetes 拓扑、资源与多 Pod 只读 Tool](V2-004-kubernetes-topology-tools.md) | Done | V2-002 |
 | V2-005 | [Prometheus 指标与 OOMKilled](V2-005-prometheus-and-oom.md) | Done | V2-003、V2-004 |
-| V2-006 | [Readiness Probe Failure](V2-006-readiness-failure.md) | Ready | V2-003、V2-004 |
+| V2-006 | [Readiness Probe Failure](V2-006-readiness-failure.md) | Paused | V2-003、V2-004 |
 | V2-007 | [Liveness Probe Failure](V2-007-liveness-failure.md) | Planned | V2-003 |
 | V2-008 | [ImagePullBackOff](V2-008-image-pull-failure.md) | Planned | V2-003 |
 | V2-009 | [Loki 日志与延迟升高](V2-009-loki-and-latency.md) | Planned | V2-003、V2-005 |
 | V2-010 | [Git/CI 元数据与发布后故障](V2-010-git-cicd-post-deployment.md) | In Progress | V2-003、V2-005 |
 | V2-011 | [Service 503 拓扑诊断](V2-011-service-503.md) | Done | V2-003、V2-004、V2-005 |
 | V2-012 | [八类故障与多数据源阶段验收](V2-012-multi-fault-acceptance.md) | Planned | V2-005 至 V2-011 |
-
 | V3-001 | [Trace 统一查询与本地 CLI](V3-001-trace-query.md) | Done | V1-007、V2-003 |
 | V3-002 | [六维 Budget Manager](V3-002-budget-manager.md) | Done | V3-001 |
-| V3-003 | [Offline Replay 演示](V3-003-offline-demo.md) | Planned | V3-001、V3-002 |
+| V3-003 | [Offline Replay 演示](V3-003-offline-demo.md) | Done | V3-001、V3-002 |
 
 任务状态使用：`Planned`、`Ready`、`In Progress`、`Paused`、`Blocked`、`Done`。
 
