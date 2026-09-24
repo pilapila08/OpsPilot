@@ -1,6 +1,6 @@
 # V3-002: 六维 Budget Manager 与可审计停止原因
 
-- Status: Planned
+- Status: Done
 - Phase: V3
 - Depends on: V3-001
 
@@ -25,11 +25,15 @@
 
 ## 验收
 
-- [ ] 六维边界、首调/重试区别、耗时口径有测试。
-- [ ] Planner 之前预算耗尽时不调用模型或 Tool。
-- [ ] V1/V2 超预算保留 Evidence 和 PARTIAL Result，停止原因经 Trace 可查询。
-- [ ] 新迁移升级/回滚、旧数据兼容、Trace 隔离通过。
-- [ ] 默认 pytest、strict mypy 通过，更新 STATUS 与交接说明。
+- [x] 六维边界、首调/重试区别、耗时口径有测试。
+- [x] Planner 之前预算耗尽时不调用模型或 Tool。
+- [x] V1/V2 超预算保留 Evidence 和 PARTIAL Result，停止原因经 Trace 可查询。
+- [x] 新迁移升级/回滚、旧数据兼容、Trace 隔离通过。
+- [x] 默认 pytest、strict mypy 通过，更新 STATUS；整体交接在 V3-003 收尾。
+
+## 验证与决策
+
+2026-09-25：默认 `425 passed, 4 skipped`；strict mypy `175 source files` 通过。停止事实迁移为 `20260925_0005`；运行终态仍为 BUDGET_EXCEEDED，Result 使用 schema 3 的无 Claim PARTIAL，包含零 Evidence 情况。详见 [ADR 0007](../docs/adr/0007-central-budget-and-audited-partial.md)。
 
 ## 不做
 

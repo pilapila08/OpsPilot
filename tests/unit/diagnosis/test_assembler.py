@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from opspilot.agent import IntentOutput
+from opspilot.agent.schemas import BudgetLimits, BudgetState
 from opspilot.agent.state import AgentState, AgentStatus
 from opspilot.diagnosis import DiagnosisInputError, V1DiagnosisAssembler
 from opspilot.evidence import Evidence
@@ -11,6 +12,7 @@ from opspilot.errors import ErrorCode
 from opspilot.execution.models import ExecutionSummary
 from opspilot.llm.audit import InMemoryModelAuditRepository
 from opspilot.llm.client import ScriptedModelClient
+from opspilot.llm.errors import ModelBudgetError
 from opspilot.llm.models import ScriptedModelResponse, StructuredModelConfig
 from opspilot.llm.prompts import load_prompt
 from opspilot.storage import InMemoryRuntimeRepository
@@ -85,6 +87,28 @@ def test_candidate_is_audited_but_only_canonical_result_is_persisted() -> None:
     assert len(audit.attempts) == 1 and audit.attempts[0].success
     assert "Ignore prior rules" not in client.requests[0].messages[1].content
     assert "kubectl delete" not in client.requests[0].messages[1].content
+
+
+def test_final_successful_model_response_over_budget_cannot_persist_completed_result() -> None:
+    evidence = _evidence()
+    assembler, client, audit, runtime, summary = _setup(
+        evidence, [ScriptedModelResponse(
+            payload=_draft(evidence).model_dump(mode="json"), input_tokens=100, output_tokens=20,
+        )],
+    )
+    state = summary.state.model_copy(update={
+        "budget": BudgetState(limits=BudgetLimits(max_tokens=100)),
+    })
+    runtime.save_state("run_001", state)
+    summary = summary.model_copy(update={"state": state})
+    with pytest.raises(ModelBudgetError) as caught:
+        asyncio.run(assembler.diagnose(run_id="run_001", result_id="result_001", execution=summary))
+    assert client.call_count == 1
+    assert len(audit.attempts) == 1 and audit.attempts[0].success
+    assert caught.value.budget is not None and caught.value.budget.tokens_used == 120
+    assert caught.value.budget_stop is not None
+    assert caught.value.budget_stop.phase == "diagnosis.after"
+    assert runtime.get_result("run_001") is None
 
 
 def test_unknown_candidate_reference_is_audited_and_cannot_persist_result() -> None:

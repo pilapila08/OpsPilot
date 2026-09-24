@@ -19,10 +19,9 @@ from opspilot.faults import (
 )
 from opspilot.integrations.kubernetes.models import NamespaceName, ResourceName
 from opspilot.llm.audit import ModelAuditError, ModelAuditRepository, ModelCallAttempt
-from opspilot.llm.budget import consume_retry, consume_usage, ensure_model_budget
+from opspilot.llm.budget import complete_with_budget, consume_retry, ensure_model_budget
 from opspilot.llm.client import StructuredModelClient
 from opspilot.llm.errors import (
-    ModelBudgetError,
     ModelExternalError,
     ModelGatewayError,
     ModelSchemaError,
@@ -126,7 +125,7 @@ class V2IntentRouter:
             )
         except ValidationError:
             raise RouterScopeError("router input is invalid") from None
-        ensure_model_budget(budget)
+        ensure_model_budget(budget, phase="router.before")
         try:
             prompt_version_id = self._audit.register_prompt(self._prompt)
         except ModelAuditError:
@@ -146,7 +145,7 @@ class V2IntentRouter:
         current_budget = budget
 
         for attempt_index in range(self._settings.max_schema_retries + 1):
-            ensure_model_budget(current_budget)
+            ensure_model_budget(current_budget, phase="router.before")
             request = StructuredModelRequest(
                 messages=tuple(messages),
                 prompt=PromptReference.from_template(self._prompt),
@@ -155,8 +154,12 @@ class V2IntentRouter:
             started_at = datetime.now(UTC)
             started_clock = perf_counter()
             try:
-                result = await self._client.complete(request, V2RouterModelOutput)
+                result, current_budget = await complete_with_budget(
+                    self._client, request, V2RouterModelOutput, current_budget,
+                    phase="router",
+                )
             except ModelGatewayError as exc:
+                current_budget = exc.budget or current_budget
                 elapsed_ms = max(0, round((perf_counter() - started_clock) * 1_000))
                 usage = exc.usage or ModelUsage()
                 latency_ms = (
@@ -174,20 +177,17 @@ class V2IntentRouter:
                         model_version=exc.model_version,
                         output=None,
                         error=exc,
+                        budget=current_budget,
                     )
                 )
-                current_budget = consume_usage(
-                    current_budget, usage=usage, latency_ms=latency_ms
-                )
+                if exc.budget_stop is not None:
+                    raise
+                ensure_model_budget(current_budget, phase="router.after", after=True)
                 if not isinstance(exc, ModelSchemaError):
                     raise
                 if attempt_index >= self._settings.max_schema_retries:
                     raise
-                if current_budget.retries_used >= current_budget.limits.max_retries:
-                    raise ModelBudgetError(
-                        "schema regeneration retry budget is exhausted"
-                    ) from None
-                current_budget = consume_retry(current_budget)
+                current_budget = consume_retry(current_budget, phase="router.retry")
                 messages.append(
                     ModelMessage(
                         role=ModelRole.DEVELOPER, content=_REGENERATION_MESSAGE
@@ -195,14 +195,10 @@ class V2IntentRouter:
                 )
                 continue
 
-            current_budget = consume_usage(
-                current_budget,
-                usage=result.metadata.usage,
-                latency_ms=result.metadata.latency_ms,
-            )
             try:
                 intent, clarification = _apply_scope(result.output, router_input)
             except RouterScopeError as exc:
+                exc.budget = current_budget
                 call_ids.append(
                     self._append_attempt(
                         router_input=router_input,
@@ -215,6 +211,7 @@ class V2IntentRouter:
                         model_version=result.metadata.model_version,
                         output=result.output,
                         error=exc,
+                        budget=current_budget,
                     )
                 )
                 raise
@@ -230,8 +227,10 @@ class V2IntentRouter:
                     model_version=result.metadata.model_version,
                     output=result.output,
                     error=None,
+                    budget=current_budget,
                 )
             )
+            ensure_model_budget(current_budget, phase="router.after", after=True)
             return RouterOutcomeV2(
                 intent=intent,
                 clarification_code=clarification,
@@ -255,6 +254,7 @@ class V2IntentRouter:
         model_version: str | None,
         output: V2RouterModelOutput | None,
         error: ModelGatewayError | None,
+        budget: BudgetState,
     ) -> str:
         request_payload: dict[str, JsonValue] = {
             "namespace": router_input.namespace,
@@ -297,7 +297,7 @@ class V2IntentRouter:
             )
         except ModelAuditError:
             raise ModelExternalError(
-                "model call audit could not be persisted"
+                "model call audit could not be persisted", budget=budget,
             ) from None
         return recorded.call_id
 

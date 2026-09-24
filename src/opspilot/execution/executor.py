@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from opspilot.agent.schemas import BudgetState
 from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.budget import BudgetManager, BudgetRejection
 from opspilot.errors import ErrorCode, ErrorInfo, error_policy
 from opspilot.evidence import EvidenceExtractionError, EvidenceExtractorRegistry
 from opspilot.evidence.models import Evidence
@@ -93,11 +94,12 @@ class BoundedExecutor:
         completed_steps = 0
 
         for step in plan.steps:
-            budget = _with_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
-            if budget.steps_used >= budget.limits.max_steps or budget.tool_calls_used >= budget.limits.max_tool_calls or budget.elapsed_seconds >= budget.limits.timeout_seconds:
+            budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
+            rejected = BudgetManager.check_tool(budget, first_attempt=True)
+            if rejected is not None:
                 return self._finish(
                     executing, budget, completed_steps, call_ids, evidence_ids,
-                    _error(ErrorCode.BUDGET_EXCEEDED, "execution budget is exhausted"),
+                    rejected,
                 )
             try:
                 definition = self._registry.get(step.tool)
@@ -119,15 +121,16 @@ class BoundedExecutor:
             )
             attempt_no = 0
             while True:
-                budget = _with_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
-                if budget.tool_calls_used >= budget.limits.max_tool_calls or budget.elapsed_seconds >= budget.limits.timeout_seconds:
+                budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
+                rejected = BudgetManager.check_tool(budget, first_attempt=attempt_no == 0)
+                if rejected is not None:
                     return self._finish(
                         executing, budget, completed_steps, call_ids, evidence_ids,
-                        _error(ErrorCode.BUDGET_EXCEEDED, "execution budget is exhausted"),
+                        rejected,
                     )
                 attempt_no += 1
                 started_at = self._clock()
-                remaining = budget.limits.timeout_seconds - budget.elapsed_seconds
+                remaining = BudgetManager.remaining_seconds(budget)
                 try:
                     async with asyncio.timeout(remaining):
                         response = await self._registry.invoke(invocation)
@@ -137,12 +140,8 @@ class BoundedExecutor:
                         "runtime execution timed out",
                     )
                 completed_at = self._clock()
-                budget = _with_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
-                budget = _with_counts(
-                    budget,
-                    steps=budget.steps_used + (1 if attempt_no == 1 else 0),
-                    calls=budget.tool_calls_used + 1,
-                )
+                budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
+                budget = BudgetManager.consume_tool(budget, first_attempt=attempt_no == 1)
                 if response.metadata.call_id != invocation.call_id or response.metadata.tool_name != invocation.tool or response.metadata.tool_version != definition.version:
                     response = _failure_response(
                         invocation, definition.version, ErrorCode.TOOL_OUTPUT_INVALID,
@@ -188,11 +187,24 @@ class BoundedExecutor:
                 call_ids.append(recorded.record_id)
                 evidence_ids.extend(item.evidence_id for item in evidence)
 
+                if response.error is None or response.error.code is not ErrorCode.BUDGET_EXCEEDED:
+                    rejected = BudgetManager.check_model(budget, phase="tool.after", after=True)
+                    if rejected is not None:
+                        return self._finish(
+                            executing, budget, completed_steps + int(response.success),
+                            call_ids, evidence_ids, rejected,
+                        )
                 if response.success:
                     completed_steps += 1
                     break
                 assert response.error is not None
                 code = response.error.code
+                if code is ErrorCode.BUDGET_EXCEEDED:
+                    rejected = BudgetManager.timeout(budget, phase="tool.call")
+                    return self._finish(
+                        executing, rejected.reason.budget, completed_steps, call_ids,
+                        evidence_ids, rejected,
+                    )
                 retry_allowed = (
                     response.error.retryable
                     and error_policy(code).retryable
@@ -205,32 +217,35 @@ class BoundedExecutor:
                         executing, budget, completed_steps, call_ids, evidence_ids,
                         response.error,
                     )
-                if budget.retries_used >= budget.limits.max_retries or budget.tool_calls_used >= budget.limits.max_tool_calls or budget.elapsed_seconds >= budget.limits.timeout_seconds:
+                rejected = BudgetManager.check_retry(budget, tool=True, phase="tool.retry")
+                if rejected is not None:
                     return self._finish(
                         executing, budget, completed_steps, call_ids, evidence_ids,
-                        _error(ErrorCode.BUDGET_EXCEEDED, "Tool retry budget is exhausted"),
+                        rejected,
                     )
-                budget = _with_retry(budget)
+                budget = BudgetManager.consume_retry(budget, phase="tool.retry")
                 backoff = min(
                     definition.retry_policy.initial_backoff_seconds
                     * definition.retry_policy.backoff_multiplier ** (attempt_no - 1),
                     definition.retry_policy.max_backoff_seconds,
                 )
                 try:
-                    async with asyncio.timeout(budget.limits.timeout_seconds - budget.elapsed_seconds):
+                    async with asyncio.timeout(BudgetManager.remaining_seconds(budget)):
                         await self._sleep(backoff)
                 except TimeoutError:
-                    budget = _with_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
+                    budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
+                    rejected = BudgetManager.timeout(budget, phase="tool.backoff")
                     return self._finish(
-                        executing, budget, completed_steps, call_ids, evidence_ids,
-                        _error(ErrorCode.BUDGET_EXCEEDED, "Tool retry backoff exceeded runtime budget"),
+                        executing, rejected.reason.budget, completed_steps, call_ids,
+                        evidence_ids, rejected,
                     )
 
-        budget = _with_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
-        if budget.elapsed_seconds >= budget.limits.timeout_seconds:
+        budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start_monotonic))
+        rejected = BudgetManager.check_model(budget, phase="tool.after", after=True)
+        if rejected is not None:
             return self._finish(
                 executing, budget, completed_steps, call_ids, evidence_ids,
-                _error(ErrorCode.BUDGET_EXCEEDED, "runtime execution timed out"),
+                rejected,
             )
         finished = _progress(executing, budget, completed_steps, call_ids, evidence_ids)
         return ExecutionSummary(
@@ -249,6 +264,7 @@ class BoundedExecutor:
             tool_attempt_ids=state.tool_call_ids,
             evidence_ids=state.evidence_ids,
             error=error,
+            budget_stop=error.reason if isinstance(error, BudgetRejection) else None,
         )
 
     def _finish(
@@ -273,6 +289,7 @@ class BoundedExecutor:
             tool_attempt_ids=tuple(call_ids),
             evidence_ids=tuple(evidence_ids),
             error=error,
+            budget_stop=error.reason if isinstance(error, BudgetRejection) else None,
         )
 
 
@@ -291,24 +308,6 @@ def _progress(
             "tool_call_ids": tuple(call_ids),
             "evidence_ids": tuple(evidence_ids),
         }
-    )
-
-
-def _with_counts(budget: BudgetState, *, steps: int, calls: int) -> BudgetState:
-    return BudgetState.model_validate(
-        {**budget.model_dump(mode="python"), "steps_used": steps, "tool_calls_used": calls}
-    )
-
-
-def _with_elapsed(budget: BudgetState, elapsed: float) -> BudgetState:
-    return BudgetState.model_validate(
-        {**budget.model_dump(mode="python"), "elapsed_seconds": max(budget.elapsed_seconds, elapsed)}
-    )
-
-
-def _with_retry(budget: BudgetState) -> BudgetState:
-    return BudgetState.model_validate(
-        {**budget.model_dump(mode="python"), "retries_used": budget.retries_used + 1}
     )
 
 

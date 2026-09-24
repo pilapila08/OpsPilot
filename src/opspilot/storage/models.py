@@ -135,6 +135,9 @@ class AgentRunRecord(Base):
     planning_rounds: Mapped[list[PlanningRoundRecord]] = relationship(
         back_populates="run", passive_deletes=True,
     )
+    budget_stop: Mapped[BudgetStopRecord | None] = relationship(
+        back_populates="run", passive_deletes=True,
+    )
 
 
 class PlanningRoundRecord(Base):
@@ -162,6 +165,43 @@ class PlanningRoundRecord(Base):
     )
 
     run: Mapped[AgentRunRecord] = relationship(back_populates="planning_rounds")
+
+
+class BudgetStopRecord(Base):
+    """First budget stop fact for one Run; later writes cannot replace it."""
+
+    __tablename__ = "budget_stops"
+    __table_args__ = (
+        CheckConstraint(
+            "dimension IN ('steps', 'tool_calls', 'retries', 'tokens', 'cost', 'elapsed')",
+            name="dimension_valid",
+        ),
+        CheckConstraint("length(phase) > 0", name="phase_nonempty"),
+        CheckConstraint("step_no >= 1", name="step_no_positive"),
+        CheckConstraint(
+            "kind IN ('exhausted', 'projected', 'deadline')", name="kind_valid",
+        ),
+        CheckConstraint("requested >= 0", name="requested_nonnegative"),
+        CheckConstraint(
+            "round_no IS NULL OR round_no BETWEEN 1 AND 4", name="round_no_valid",
+        ),
+    )
+
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="RESTRICT"), primary_key=True,
+    )
+    dimension: Mapped[str] = mapped_column(String(16), nullable=False)
+    phase: Mapped[str] = mapped_column(String(128), nullable=False)
+    step_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested: Mapped[Decimal] = mapped_column(Numeric(30, 18), nullable=False)
+    budget_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    round_no: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False,
+    )
+
+    run: Mapped[AgentRunRecord] = relationship(back_populates="budget_stop")
 
 
 class PromptVersionRecord(Base):

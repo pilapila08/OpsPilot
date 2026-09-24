@@ -13,8 +13,9 @@ from opspilot.evidence.models import Claim, Evidence, MissingEvidence, Verificat
 from opspilot.errors import ErrorCode
 from opspilot.execution.repository import InMemoryExecutionRepository
 from opspilot.llm.audit import InMemoryModelAuditRepository
-from opspilot.llm.client import ScriptedModelClient
-from opspilot.llm.models import ScriptedModelResponse, StructuredModelConfig
+from opspilot.llm.client import ScriptedModelClient, ScriptedStep
+from opspilot.llm.models import ModelUsage, ScriptedModelResponse, StructuredModelConfig
+from opspilot.llm.errors import ModelExternalError, ModelSchemaError
 from opspilot.llm.prompts import load_prompt
 from opspilot.planning.v2_planner import V2Planner
 from opspilot.routing.v2 import IntentV2, V2IntentRouter
@@ -126,15 +127,17 @@ def _registry(*, healthy: bool, fail_explicit: bool = False) -> ToolRegistry:
 
 
 def _runtime(
-    steps: list[ScriptedModelResponse], *, healthy: bool = False,
+    steps: list[ScriptedStep], *, healthy: bool = False,
     verifier: FakeVerifier | None = None,
     limits: BudgetLimits | None = None,
     max_semantic_retries: int = 1,
     fail_explicit: bool = False,
+    storage: InMemoryRuntimeRepository | None = None,
+    audit: InMemoryModelAuditRepository | None = None,
 ) -> tuple[ObservationRuntimeV2, ScriptedModelClient, InMemoryExecutionRepository, InMemoryPlanningRoundRepository, FakeVerifier]:
     client = ScriptedModelClient(steps)
-    audit = InMemoryModelAuditRepository()
-    storage = InMemoryRuntimeRepository()
+    audit = audit or InMemoryModelAuditRepository()
+    storage = storage or InMemoryRuntimeRepository()
     tools = InMemoryExecutionRepository()
     rounds = InMemoryPlanningRoundRepository()
     chosen_verifier = verifier or FakeVerifier()
@@ -199,16 +202,29 @@ def test_v2_repeated_observation_stops_with_partial() -> None:
 
 
 def test_v2_entire_round_rejected_before_any_tool_when_budget_insufficient() -> None:
+    storage = InMemoryRuntimeRepository()
     runtime, client, tools, rounds, verifier = _runtime([
         _router(), _decision(1, "continue", [
             _call("call_one"), _call("call_two", pod_name="api-001"),
         ]),
-    ], limits=BudgetLimits(max_steps=1), max_semantic_retries=0)
+    ], limits=BudgetLimits(max_steps=1), max_semantic_retries=0, storage=storage)
     output = asyncio.run(runtime.run(_request()))
     assert output.status is AgentStatus.BUDGET_EXCEEDED
     assert output.error is not None and output.error.code is ErrorCode.BUDGET_EXCEEDED
+    assert output.diagnosis is not None and output.diagnosis.status == "PARTIAL"
+    assert output.diagnosis.schema_version == 3
+    assert output.diagnosis.claims_payload == ()
+    assert output.diagnosis.verification_payload["kind"] == "budget_stop"
+    assert output.diagnosis.verification_payload["checked_evidence_ids"] == []
     assert not tools.attempts and not rounds.rounds
     assert verifier.calls == 0
+    assert client.call_count == 2
+    (stop,) = storage.budget_stops_for_trace(output.trace_id)
+    assert (stop.reason.dimension, stop.reason.phase, stop.reason.kind) == (
+        "steps", "plan.admission", "projected",
+    )
+    assert (stop.reason.step_no, stop.round_no, stop.reason.requested) == (1, 1, Decimal(2))
+    assert stop.reason.budget.steps_used == 0
     client.assert_exhausted()
 
 
@@ -245,18 +261,76 @@ def test_v2_failed_second_tool_keeps_prior_evidence_and_attempt() -> None:
 
 
 def test_v2_budget_exhaustion_after_evidence_persists_partial_result() -> None:
+    storage = InMemoryRuntimeRepository()
     runtime, client, tools, rounds, verifier = _runtime([
         _router(), _decision(1, "continue", [_call("call_status")]),
-        _decision(2, "continue", [_call("call_explicit_pod", pod_name="api-001")], ["ev_001"]),
-    ], limits=BudgetLimits(max_steps=1), max_semantic_retries=0)
+    ], limits=BudgetLimits(max_steps=1), max_semantic_retries=0, storage=storage)
     output = asyncio.run(runtime.run(_request()))
     assert output.status is AgentStatus.BUDGET_EXCEEDED
     assert output.error is not None and output.error.code is ErrorCode.BUDGET_EXCEEDED
     assert output.diagnosis is not None and output.diagnosis.status == "PARTIAL"
+    assert output.diagnosis.schema_version == 3
+    assert output.diagnosis.claims_payload == ()
+    assert output.diagnosis.verification_payload["kind"] == "budget_stop"
+    checked = output.diagnosis.verification_payload["checked_evidence_ids"]
+    assert isinstance(checked, list) and len(checked) == len(tools.evidence)
     assert len(tools.attempts) == 1
     assert len(rounds.rounds) == 1
-    assert verifier.calls == 1
+    assert verifier.calls == 0
+    assert client.call_count == 2  # second Planner is not called after step exhaustion
+    (stop,) = storage.budget_stops_for_trace(output.trace_id)
+    assert (stop.reason.dimension, stop.reason.phase, stop.reason.step_no, stop.round_no) == (
+        "steps", "planner.before", 2, 2,
+    )
+    assert stop.reason.budget.steps_used == 1
+    assert stop.reason.budget.tool_calls_used == 1
     client.assert_exhausted()
+
+
+def test_v2_failed_router_attempt_retains_usage_and_retry_stop() -> None:
+    storage = InMemoryRuntimeRepository()
+    audit = InMemoryModelAuditRepository()
+    failed = ModelSchemaError(
+        "invalid structured response",
+        usage=ModelUsage(input_tokens=12, output_tokens=8, total_tokens=20,
+                         cost_usd=Decimal("0.000200")),
+    )
+    runtime, client, tools, rounds, verifier = _runtime(
+        [failed], limits=BudgetLimits(max_retries=0), storage=storage, audit=audit,
+    )
+    output = asyncio.run(runtime.run(_request()))
+    assert output.status is AgentStatus.BUDGET_EXCEEDED
+    assert output.diagnosis is not None and output.diagnosis.schema_version == 3
+    assert output.state.budget.tokens_used == 20
+    assert output.state.budget.cost_usd == Decimal("0.0002")
+    assert client.call_count == 1
+    assert len(audit.attempts) == 1
+    assert audit.attempts[0].error_code is ErrorCode.SCHEMA_VALIDATION
+    assert audit.attempts[0].input_tokens == 12
+    assert not tools.attempts and not rounds.rounds and verifier.calls == 0
+    (stop,) = storage.budget_stops_for_trace(output.trace_id)
+    assert (stop.reason.dimension, stop.reason.phase, stop.reason.step_no) == (
+        "retries", "router.retry", 1,
+    )
+
+
+def test_v2_external_model_failure_keeps_external_error_and_usage() -> None:
+    storage = InMemoryRuntimeRepository()
+    failed = ModelExternalError(
+        "provider unavailable",
+        usage=ModelUsage(input_tokens=7, output_tokens=3, total_tokens=10,
+                         cost_usd=Decimal("0.000100")),
+    )
+    runtime, client, tools, rounds, verifier = _runtime([failed], storage=storage)
+    output = asyncio.run(runtime.run(_request()))
+    assert output.status is AgentStatus.FAILED
+    assert output.error is not None and output.error.code is ErrorCode.EXTERNAL_SERVICE_ERROR
+    assert output.state.budget.tokens_used == 10
+    assert output.state.budget.cost_usd == Decimal("0.0001")
+    assert output.diagnosis is None
+    assert storage.budget_stops_for_trace(output.trace_id) == ()
+    assert client.call_count == 1
+    assert not tools.attempts and not rounds.rounds and verifier.calls == 0
 
 
 def test_v2_unknown_tool_is_policy_terminal_without_execution() -> None:

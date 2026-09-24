@@ -18,6 +18,7 @@ from opspilot.llm import (
     StructuredModelConfig,
 )
 from opspilot.routing import IntentRouter
+from opspilot.llm.models import ModelUsage
 
 
 def _prompt() -> PromptTemplate:
@@ -69,7 +70,9 @@ def _router(
     )
 
 
-def test_router_produces_v0_case_intent_and_audits_usage() -> None:
+def test_router_produces_v0_case_intent_and_audits_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    ticks = iter((1.0, 1.007))
+    monkeypatch.setattr("opspilot.llm.budget.perf_counter", lambda: next(ticks))
     client = ScriptedModelClient([_valid_response()])
     audit = InMemoryModelAuditRepository()
 
@@ -90,11 +93,12 @@ def test_router_produces_v0_case_intent_and_audits_usage() -> None:
     assert outcome.attempts == 1
     assert outcome.budget.tokens_used == 15
     assert outcome.budget.cost_usd == Decimal("0.001000")
-    assert outcome.budget.elapsed_seconds == 0.02
+    assert outcome.budget.elapsed_seconds == pytest.approx(0.007)
 
     assert len(audit.prompts) == 1
     assert len(audit.attempts) == 1
     attempt = audit.attempts[0]
+    assert attempt.latency_ms == 20
     assert attempt.success is True
     assert attempt.input_tokens == 10
     assert attempt.output_tokens == 5
@@ -187,6 +191,44 @@ def test_router_schema_regeneration_respects_retry_budget() -> None:
 
     assert client.call_count == 1
     assert len(audit.attempts) == 1
+
+
+def test_failed_schema_usage_crossing_token_limit_is_retained_without_retry() -> None:
+    client = ScriptedModelClient([
+        ScriptedModelResponse(payload={"invalid": True}, input_tokens=6, output_tokens=4),
+        _valid_response(),
+    ])
+    audit = InMemoryModelAuditRepository()
+    with pytest.raises(ModelBudgetError) as caught:
+        asyncio.run(_router(client, audit).route(
+            run_id="run_001", query="Why is api restarting?", namespace="team-a",
+            budget=BudgetState(limits=BudgetLimits(max_tokens=8)),
+        ))
+    assert caught.value.budget is not None and caught.value.budget.tokens_used == 10
+    assert caught.value.budget_stop is not None
+    assert caught.value.budget_stop.dimension == "tokens"
+    assert client.call_count == 1
+    assert len(audit.attempts) == 1
+    assert audit.attempts[0].error_code is ErrorCode.SCHEMA_VALIDATION
+    assert audit.attempts[0].input_tokens + audit.attempts[0].output_tokens == 10
+
+
+def test_provider_failure_retains_usage_and_micro_cost_on_exception() -> None:
+    client = ScriptedModelClient([ModelTimeoutError(
+        "provider timed out", usage=ModelUsage(
+            input_tokens=2, output_tokens=1, total_tokens=3, cost_usd=Decimal("0.000001"),
+        ), latency_ms=25,
+    )])
+    audit = InMemoryModelAuditRepository()
+    with pytest.raises(ModelTimeoutError) as caught:
+        asyncio.run(_router(client, audit).route(
+            run_id="run_001", query="Why is api restarting?", namespace="team-a",
+            budget=BudgetState(),
+        ))
+    assert caught.value.budget is not None
+    assert caught.value.budget.tokens_used == 3
+    assert caught.value.budget.cost_usd == Decimal("0.000001")
+    assert audit.attempts[0].latency_ms == 25
 
 
 def test_router_does_not_regenerate_non_schema_errors() -> None:

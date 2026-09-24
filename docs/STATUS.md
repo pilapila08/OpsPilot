@@ -2,7 +2,7 @@
 
 - Updated: 2026-09-25
 - Current phase: V3 Runtime 工程化（Trace → Budget → Offline Demo）
-- Current task: `V3-002-budget-manager`（Ready）；V3-001 已验收
+- Current task: `V3-003-offline-demo`（Ready）；V3-001、V3-002 已验收
 - Repository state: V0 契约 v0.1 已冻结；V1 Offline/Live 与修复侧验收完成；V2-001 已形成版本化架构、ADR 与工作单
 
 ## 已完成
@@ -75,6 +75,7 @@
 
 - V3-001 完成：本地 `python -m opspilot trace <trace_id>` 可按 Trace 读取 Run/轮次/LLM 尝试/Tool 重试/Evidence/Result。CLI 仅输出安全投影，SQLite 只读连接，不新增 HTTP 端点；决策见 ADR 0006。默认 398 passed、4 skipped，strict mypy 171 文件通过。
 - V3-002、V3-003 已先行建立工作单，按 Trace → Budget → Demo 依赖实施。
+- V3-002 完成：统一六维 BudgetManager、模型/Tool deadline 与失败 usage 记账，V1/V2 在 Planner 前准入。additive 0005 迁移保存首个 BudgetStop，Trace 可查维度/阶段/步骤/轮次与快照；零 Evidence 也生成无 Claim 的 schema 3 PARTIAL。决策见 ADR 0007；默认 425 passed、4 skipped，strict mypy 175 文件通过。
 
 - V2-010 正在进行：GitHub 只读 Reader、配置 allowlist、三个 Risk 0 Tool、无原文 diff 的 Evidence 与确定性发布/错误率时间线已实现。`release-failure-v2` 主分支通过 SQLite 全链路回放；故障早于发布、重叠发布、未知 commit、缺指标、重复样本与回滚恢复有单元反证。默认离线 `394 passed, 3 skipped`（opt-in Live），strict mypy 165 文件通过。运行中 Deployment 与 CI SHA 的可信绑定及反证 Case 回放仍待实现，故所有发布相关性结论保持 Partial。V2-006 已有 Pod Ready condition、readiness Event 与 Deployment probe Evidence，但 Verifier、四分支 Case 与恢复快照未完成，状态退回 Ready 待续。
 

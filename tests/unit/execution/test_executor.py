@@ -178,3 +178,19 @@ def test_unvalidated_plan_object_cannot_enter_executor() -> None:
     executor, state, _, _ = _setup(registry)
     with pytest.raises(ValueError, match="validated V1 plan"):
         asyncio.run(executor.execute(run_id="run_001", state=state, validated_plan=cast(ValidatedPlanV1, _plan())))
+
+
+def test_elapsed_stop_keeps_failed_tool_audit_without_retrying() -> None:
+    ticks = [0.0]
+    registry = ScriptedRegistry([ErrorCode.PERMISSION_DENIED], ticks=ticks)
+    executor, state, plan, sink = _setup(registry, ticks=ticks)
+    summary = asyncio.run(executor.execute(run_id="run_001", state=state, validated_plan=plan))
+    assert summary.state.status is AgentStatus.BUDGET_EXCEEDED
+    assert summary.budget_stop is not None
+    assert summary.budget_stop.dimension == "elapsed"
+    assert summary.budget_stop.phase == "tool.after"
+    assert summary.budget_stop.step_no == 1
+    assert summary.budget_stop.budget.elapsed_seconds == 95
+    assert len(sink.attempts) == 1
+    assert sink.attempts[0].response.error is not None
+    assert sink.attempts[0].response.error.code is ErrorCode.PERMISSION_DENIED

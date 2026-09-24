@@ -9,6 +9,7 @@ from time import perf_counter
 
 from pydantic import JsonValue
 
+from opspilot.agent.schemas import BudgetState
 from opspilot.agent.state import AgentStatus
 from opspilot.diagnosis.models import DiagnosisAssessment, DiagnosisDraftV1, DiagnosisOutcome
 from opspilot.diagnosis.verifier import BasicCrashLoopVerifier, DiagnosisInputError
@@ -16,7 +17,7 @@ from opspilot.errors import ErrorCode
 from opspilot.evidence.models import Claim, Evidence
 from opspilot.execution.models import ExecutionSummary
 from opspilot.llm.audit import ModelAuditError, ModelAuditRepository, ModelCallAttempt
-from opspilot.llm.budget import consume_retry, consume_usage, ensure_model_budget
+from opspilot.llm.budget import complete_with_budget, consume_retry, ensure_model_budget
 from opspilot.llm.client import StructuredModelClient
 from opspilot.llm.errors import ModelExternalError, ModelGatewayError, ModelSchemaError
 from opspilot.llm.models import (
@@ -68,7 +69,7 @@ class V1DiagnosisAssembler:
         state = execution.state
         evidence = self._validated_evidence(run_id, execution)
         assert state.intent is not None
-        ensure_model_budget(state.budget)
+        ensure_model_budget(state.budget, phase="diagnosis.before")
         try:
             prompt_version_id = self._audit.register_prompt(self._prompt)
         except ModelAuditError:
@@ -78,7 +79,7 @@ class V1DiagnosisAssembler:
         budget = state.budget
         call_ids: list[str] = []
         for attempt_index in range(self._max_schema_retries + 1):
-            ensure_model_budget(budget)
+            ensure_model_budget(budget, phase="diagnosis.before")
             request = StructuredModelRequest(
                 messages=tuple(messages),
                 prompt=PromptReference.from_template(self._prompt),
@@ -87,8 +88,11 @@ class V1DiagnosisAssembler:
             started_at = datetime.now(UTC)
             started_clock = perf_counter()
             try:
-                response = await self._client.complete(request, DiagnosisDraftV1)
+                response, budget = await complete_with_budget(
+                    self._client, request, DiagnosisDraftV1, budget, phase="diagnosis",
+                )
             except ModelGatewayError as exc:
+                budget = exc.budget or budget
                 completed_at = datetime.now(UTC)
                 usage = exc.usage or ModelUsage()
                 latency_ms = exc.latency_ms if exc.latency_ms is not None else max(0, round((perf_counter() - started_clock) * 1_000))
@@ -98,16 +102,18 @@ class V1DiagnosisAssembler:
                     started_at=started_at, completed_at=completed_at,
                     usage=usage, latency_ms=latency_ms,
                     model_version=exc.model_version, draft=None, error_code=exc.code,
+                    budget=budget,
                 ))
-                budget = consume_usage(budget, usage=usage, latency_ms=latency_ms)
+                if exc.budget_stop is not None:
+                    raise
+                ensure_model_budget(budget, phase="diagnosis.after", after=True)
                 if not isinstance(exc, ModelSchemaError) or attempt_index >= self._max_schema_retries:
                     raise
-                budget = consume_retry(budget)
+                budget = consume_retry(budget, phase="diagnosis.retry")
                 messages.append(ModelMessage(role=ModelRole.DEVELOPER, content=_SCHEMA_REGENERATION))
                 continue
 
             completed_at = datetime.now(UTC)
-            budget = consume_usage(budget, usage=response.metadata.usage, latency_ms=response.metadata.latency_ms)
             draft = response.output
             known = {item.evidence_id for item in evidence}
             invalid_refs = any(not set(claim.evidence_ids).issubset(known) for claim in draft.claims)
@@ -120,7 +126,9 @@ class V1DiagnosisAssembler:
                 model_version=response.metadata.model_version,
                 draft=draft,
                 error_code=ErrorCode.POLICY_REJECTED if invalid_refs else None,
+                budget=budget,
             ))
+            ensure_model_budget(budget, phase="diagnosis.after", after=True)
             if invalid_refs:
                 raise DiagnosisInputError("candidate cites unknown Evidence")
 
@@ -218,6 +226,7 @@ class V1DiagnosisAssembler:
         model_version: str | None,
         draft: DiagnosisDraftV1 | None,
         error_code: ErrorCode | None,
+        budget: BudgetState,
     ) -> str:
         response_payload: dict[str, JsonValue] | None = None
         if draft is not None:
@@ -244,7 +253,7 @@ class V1DiagnosisAssembler:
                 completed_at=completed_at,
             ))
         except ModelAuditError:
-            raise ModelExternalError("diagnosis model audit could not be persisted") from None
+            raise ModelExternalError("diagnosis model audit could not be persisted", budget=budget) from None
         return recorded.call_id
 
 

@@ -11,10 +11,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from opspilot.agent.state import AgentState, AgentStatus
-from opspilot.cli import main
+from opspilot.cli import format_trace, main
+from opspilot.agent.schemas import BudgetState
+from opspilot.budget import BudgetStopReason
+from opspilot.evidence.models import MissingEvidence
 from opspilot.errors import ErrorCode
 from opspilot.llm.audit import InMemoryModelAuditRepository, ModelCallAttempt
 from opspilot.storage.model_audit import SQLAlchemyModelAuditRepository
+from opspilot.storage.contracts import BudgetStopSnapshot, BudgetVerificationV3, ResultSnapshot
+from opspilot.storage.runtime import SQLAlchemyRuntimeRepository
 from opspilot.storage.models import (
     AgentRunRecord,
     Base,
@@ -241,3 +246,55 @@ def test_cli_does_not_create_absent_database(tmp_path: Path, monkeypatch: object
     assert main(["trace", "trace_one"]) == 2
     assert not missing.exists()
     assert "unavailable" in captured.readouterr().err
+
+
+def test_trace_shows_v3_budget_stop_and_zero_evidence_partial(tmp_path: Path) -> None:
+    url = _seed_database(tmp_path / "trace.db")
+    engine = create_engine(url)
+    with Session(engine) as session:
+        repository = SQLAlchemyRuntimeRepository(session)
+        repository.append_budget_stop(BudgetStopSnapshot(
+            run_id="run_two", trace_id="trace_two", round_no=1, recorded_at=_AT,
+            reason=BudgetStopReason(
+                dimension="elapsed", phase="planner.before", step_no=2,
+                kind="deadline", requested=Decimal("0"),
+                budget=BudgetState(
+                    steps_used=1, tool_calls_used=1, retries_used=0,
+                    tokens_used=42, cost_usd=Decimal("0.0010"), elapsed_seconds=90,
+                ),
+            ),
+        ))
+        verification = BudgetVerificationV3(
+            missing_evidence=(MissingEvidence(
+                requirement="A trusted observation", reason="SECRET INTERNAL STOP REASON",
+            ),),
+            rationale="Budget stopped before a sufficient observation.",
+        )
+        repository.append_result(ResultSnapshot(
+            result_id="result_two", task_id="task_two", run_id="run_two",
+            status="PARTIAL", root_cause="Insufficient evidence",
+            recommendation="Retry with a larger budget", confidence=Decimal("0"),
+            claims_payload=(), verification_payload=verification.model_dump(mode="json"),
+            schema_version=3,
+        ))
+    engine.dispose()
+
+    view = query_trace(url, "trace_two")
+    assert view is not None
+    assert len(view.budget_stops) == 1
+    assert view.budget_stops[0].reason.dimension == "elapsed"
+    assert view.statistics.budget_stops == 1
+    assert view.result is not None
+    assert view.result.claim_ids == ()
+    assert view.result.verification.kind == "budget_stop"
+    assert view.result.verification.checked_evidence_ids == ()
+    assert view.result.verification.missing_evidence_count == 1
+    output = format_trace(view)
+    for marker in (
+        "dimension=elapsed", "phase=planner.before", "step=2", "round=1",
+        "kind=deadline", "requested=0", "steps=1/8", "tool_calls=1/15",
+        "retries=0/2", "tokens=42/30000", "cost_usd=0.0010/0.15",
+        "elapsed_s=90.0/90", "verification_kind=budget_stop",
+    ):
+        assert marker in output
+    assert "SECRET INTERNAL STOP REASON" not in output

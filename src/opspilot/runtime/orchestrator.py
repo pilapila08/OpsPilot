@@ -11,14 +11,15 @@ from uuid import uuid4
 
 from opspilot.agent.schemas import BudgetLimits, BudgetState
 from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.budget import BudgetExceeded, BudgetManager, BudgetRejection, BudgetStopReason
 from opspilot.diagnosis import DiagnosisInputError, V1DiagnosisAssembler
 from opspilot.errors import ErrorCode, ErrorInfo
-from opspilot.execution import BoundedExecutor, ExecutionRejectedError, ExecutionSummary
-from opspilot.llm.budget import ensure_model_budget
-from opspilot.llm.errors import ModelBudgetError, ModelGatewayError
+from opspilot.execution import BoundedExecutor, ExecutionRejectedError
+from opspilot.llm.errors import ModelGatewayError
 from opspilot.planning import PlanRejectedError, PlanValidator, V1Planner
 from opspilot.routing import IntentRouter
 from opspilot.runtime.models import DiagnosisRequest, DiagnosisRunResult
+from opspilot.runtime.budget import persist_budget_partial
 from opspilot.runtime.replay import ReplayConfigurationError
 from opspilot.storage.contracts import (
     ResultRepository, RunRepository, RunSnapshot,
@@ -105,7 +106,9 @@ class DiagnosisRuntime:
             self._runs.save_state(run_id, state)
             registry = self._registry_factory(request)
             state = self._refresh_budget(state, started)
-            ensure_model_budget(state.budget)
+            rejected = BudgetManager.check_model(state.budget, phase="router.before")
+            if rejected is not None:
+                raise BudgetExceeded(rejected)
 
             routed = await self._router.route(
                 run_id=run_id, query=request.query, namespace=request.namespace,
@@ -115,14 +118,18 @@ class DiagnosisRuntime:
             state = self._refresh_budget(state, started)
             state = self._transition(state, AgentStatus.PLANNING)
             self._runs.save_state(run_id, state)
-            ensure_model_budget(state.budget)
+            rejected = BudgetManager.check_planner(state.budget, phase="planner.before")
+            if rejected is not None:
+                raise BudgetExceeded(rejected)
 
             planned = await self._planner.plan(
                 run_id=run_id, state=state, validator=PlanValidator(registry),
             )
             state = self._refresh_budget(planned.state, started)
             self._runs.save_state(run_id, state)
-            ensure_model_budget(state.budget)
+            rejected = BudgetManager.check_tool(state.budget, first_attempt=True)
+            if rejected is not None:
+                raise BudgetExceeded(rejected)
 
             executor = BoundedExecutor(
                 registry=registry, repository=self._tools,
@@ -139,8 +146,8 @@ class DiagnosisRuntime:
             state = self._refresh_budget(execution.state, started)
             self._runs.save_state(run_id, state)
             execution = execution.model_copy(update={"state": state})
-            if state.status is AgentStatus.BUDGET_EXCEEDED and execution.evidence_ids:
-                return self._budget_partial(run_id, state, execution)
+            if execution.budget_stop is not None:
+                return self._budget_partial(run_id, state, execution.budget_stop)
             if state.status in {
                 AgentStatus.FAILED, AgentStatus.BUDGET_EXCEEDED,
                 AgentStatus.POLICY_REJECTED,
@@ -155,18 +162,9 @@ class DiagnosisRuntime:
                         retryable=False,
                     ),
                 )
-            try:
-                ensure_model_budget(state.budget)
-            except ModelBudgetError:
-                error = ErrorInfo.from_code(
-                    ErrorCode.BUDGET_EXCEEDED,
-                    "model budget is exhausted before diagnosis",
-                    retryable=False,
-                )
-                state = self._transition(state, AgentStatus.BUDGET_EXCEEDED)
-                self._runs.save_state(run_id, state)
-                exhausted = execution.model_copy(update={"state": state, "error": error})
-                return self._budget_partial(run_id, state, exhausted)
+            rejected = BudgetManager.check_model(state.budget, phase="diagnosis.before")
+            if rejected is not None:
+                raise BudgetExceeded(rejected)
 
             diagnosed = await self._diagnosis.diagnose(
                 run_id=run_id, result_id=self._ids.new("result"),
@@ -187,8 +185,22 @@ class DiagnosisRuntime:
             self._runs.save_state(run_id, state)
             return self._result(run_id, state, error=execution.error)
         except PlanRejectedError as exc:
+            if exc.budget is not None:
+                state = self._refresh_budget(_with_state(state, budget=exc.budget), started)
+                self._runs.save_state(run_id, state)
+            if isinstance(exc.error, BudgetRejection):
+                return self._budget_partial(run_id, state, exc.error.reason)
             return self._fail(run_id, state, exc.error)
+        except BudgetExceeded as exc:
+            state = self._refresh_budget(_with_state(state, budget=exc.budget), started)
+            self._runs.save_state(run_id, state)
+            return self._budget_partial(run_id, state, exc.rejection.reason)
         except ModelGatewayError as exc:
+            if exc.budget is not None:
+                state = self._refresh_budget(_with_state(state, budget=exc.budget), started)
+                self._runs.save_state(run_id, state)
+            if exc.budget_stop is not None:
+                return self._budget_partial(run_id, state, exc.budget_stop)
             return self._fail(run_id, state, exc.to_error_info(retryable=False))
         except (ReplayConfigurationError, ExecutionRejectedError, DiagnosisInputError):
             return self._fail(
@@ -228,18 +240,23 @@ class DiagnosisRuntime:
         return self._result(run_id, state, error=error)
 
     def _budget_partial(
-        self, run_id: str, state: AgentState, execution: ExecutionSummary,
+        self, run_id: str, state: AgentState, reason: BudgetStopReason,
     ) -> DiagnosisRunResult:
-        diagnosed = self._diagnosis.partial_without_model(
-            run_id=run_id, result_id=self._ids.new("result"),
-            execution=execution,
-        )
-        state = _with_state(
-            state, diagnosis_id=diagnosed.result_id,
-            verification_id=f"verification_{diagnosed.result_id}",
-        )
-        self._runs.save_state(run_id, state)
-        return self._result(run_id, state, error=execution.error)
+        try:
+            state = persist_budget_partial(
+                run_id=run_id, result_id=self._ids.new("result"), state=state,
+                reason=reason, runs=self._runs, results=self._results,
+                evidence_repository=self._tools, at=self._clock(),
+            )
+        except RuntimePersistenceError:
+            return self._fail(run_id, state, ErrorInfo.from_code(
+                ErrorCode.EXTERNAL_SERVICE_ERROR, "budget audit could not be persisted",
+                retryable=False,
+            ))
+        return self._result(run_id, state, error=ErrorInfo.from_code(
+            ErrorCode.BUDGET_EXCEEDED, "diagnosis stopped at the configured budget",
+            retryable=False,
+        ))
 
     def _result(
         self, run_id: str, state: AgentState, *, error: ErrorInfo | None,
@@ -254,11 +271,7 @@ class DiagnosisRuntime:
         return state.transition_to(target, at=max(self._clock(), state.updated_at))
 
     def _refresh_budget(self, state: AgentState, started: float) -> AgentState:
-        elapsed = max(state.budget.elapsed_seconds, self._monotonic() - started)
-        budget = BudgetState.model_validate({
-            **state.budget.model_dump(mode="python"),
-            "elapsed_seconds": elapsed,
-        })
+        budget = BudgetManager.refresh_elapsed(state.budget, self._monotonic() - started)
         return _with_state(state, budget=budget)
 
 

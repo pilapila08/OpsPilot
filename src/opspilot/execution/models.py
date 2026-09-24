@@ -8,6 +8,7 @@ from pydantic import Field, field_validator, model_validator
 
 from opspilot.agent.schemas import StrictSchema
 from opspilot.agent.state import AgentState
+from opspilot.budget import BudgetStopReason
 from opspilot.errors import ErrorInfo
 from opspilot.tools.models import ToolInvocation, ToolResponse, ToolRiskLevel
 
@@ -49,3 +50,4 @@ class ExecutionSummary(StrictSchema):
     tool_attempt_ids: tuple[str, ...]
     evidence_ids: tuple[str, ...]
     error: ErrorInfo | None = None
+    budget_stop: BudgetStopReason | None = None

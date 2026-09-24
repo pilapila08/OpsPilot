@@ -10,8 +10,9 @@ from uuid import uuid4
 
 from pydantic import Field
 
-from opspilot.agent.schemas import BudgetState, StrictSchema
+from opspilot.agent.schemas import StrictSchema
 from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.budget import BudgetManager, BudgetRejection, BudgetStopReason
 from opspilot.errors import ErrorCode, ErrorInfo, error_policy
 from opspilot.evidence import EvidenceExtractionError, EvidenceExtractorRegistry
 from opspilot.evidence.models import Evidence
@@ -28,6 +29,7 @@ class V2RoundExecution(StrictSchema):
     new_evidence_ids: tuple[str, ...] = Field(max_length=100)
     new_tool_attempt_ids: tuple[str, ...] = Field(max_length=100)
     error: ErrorInfo | None = None
+    budget_stop: BudgetStopReason | None = None
 
 
 class V2RoundExecutor:
@@ -79,14 +81,16 @@ class V2RoundExecutor:
             return V2RoundExecution(
                 state=progressed, new_evidence_ids=tuple(new_evidence),
                 new_tool_attempt_ids=tuple(new_attempts), error=error,
+                budget_stop=error.reason if isinstance(error, BudgetRejection) else None,
             )
 
         for call, (_, admitted_version) in zip(
             decision.calls, admitted.tool_versions, strict=True
         ):
-            budget = _elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
-            if _exhausted(budget):
-                return finish(_error(ErrorCode.BUDGET_EXCEEDED, "V2 execution budget exhausted"))
+            budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
+            rejected = BudgetManager.check_tool(budget, first_attempt=True)
+            if rejected is not None:
+                return finish(rejected)
             try:
                 definition = self._registry.get(call.tool)
             except LookupError:
@@ -98,14 +102,15 @@ class V2RoundExecutor:
             )
             attempt_no = 0
             while True:
-                budget = _elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
-                if _attempt_exhausted(budget):
-                    return finish(_error(ErrorCode.BUDGET_EXCEEDED, "V2 Tool budget exhausted"))
+                budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
+                rejected = BudgetManager.check_tool(budget, first_attempt=attempt_no == 0)
+                if rejected is not None:
+                    return finish(rejected)
                 attempt_no += 1
                 started_at = self._clock()
                 try:
                     async with asyncio.timeout(
-                        budget.limits.timeout_seconds - budget.elapsed_seconds
+                        BudgetManager.remaining_seconds(budget)
                     ):
                         response = await self._registry.invoke(invocation)
                 except TimeoutError:
@@ -114,12 +119,8 @@ class V2RoundExecutor:
                         "V2 execution timed out",
                     )
                 completed_at = max(self._clock(), started_at)
-                budget = _elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
-                budget = BudgetState.model_validate({
-                    **budget.model_dump(mode="python"),
-                    "steps_used": budget.steps_used + (1 if attempt_no == 1 else 0),
-                    "tool_calls_used": budget.tool_calls_used + 1,
-                })
+                budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
+                budget = BudgetManager.consume_tool(budget, first_attempt=attempt_no == 1)
                 if (
                     response.metadata.call_id != invocation.call_id
                     or response.metadata.tool_name != invocation.tool
@@ -164,25 +165,30 @@ class V2RoundExecutor:
                     ))
                 new_attempts.append(record_id)
                 new_evidence.extend(item.evidence_id for item in evidence)
+                if response.error is None or response.error.code is not ErrorCode.BUDGET_EXCEEDED:
+                    rejected = BudgetManager.check_model(budget, phase="tool.after", after=True)
+                    if rejected is not None:
+                        return finish(rejected)
                 if response.success:
                     break
                 assert response.error is not None
                 error = response.error
+                if error.code is ErrorCode.BUDGET_EXCEEDED:
+                    rejected = BudgetManager.timeout(budget, phase="tool.call")
+                    budget = rejected.reason.budget
+                    return finish(rejected)
                 retry_allowed = (
                     error.retryable and error_policy(error.code).retryable
                     and definition.retry_policy.permits(error.code)
                     and attempt_no <= definition.retry_policy.max_retries
                     and attempt_no <= error_policy(error.code).max_retries
-                    and budget.retries_used < budget.limits.max_retries
-                    and budget.tool_calls_used < budget.limits.max_tool_calls
-                    and budget.elapsed_seconds < budget.limits.timeout_seconds
                 )
                 if not retry_allowed:
                     return finish(error)
-                budget = BudgetState.model_validate({
-                    **budget.model_dump(mode="python"),
-                    "retries_used": budget.retries_used + 1,
-                })
+                rejected = BudgetManager.check_retry(budget, tool=True, phase="tool.retry")
+                if rejected is not None:
+                    return finish(rejected)
+                budget = BudgetManager.consume_retry(budget, phase="tool.retry")
                 backoff = min(
                     definition.retry_policy.initial_backoff_seconds
                     * definition.retry_policy.backoff_multiplier ** (attempt_no - 1),
@@ -190,30 +196,15 @@ class V2RoundExecutor:
                 )
                 try:
                     async with asyncio.timeout(
-                        budget.limits.timeout_seconds - budget.elapsed_seconds
+                        BudgetManager.remaining_seconds(budget)
                     ):
                         await asyncio.sleep(backoff)
                 except TimeoutError:
-                    return finish(_error(
-                        ErrorCode.BUDGET_EXCEEDED, "V2 Tool retry exceeded time budget"
-                    ))
-        budget = _elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
-        return finish()
-
-
-def _elapsed(budget: BudgetState, elapsed: float) -> BudgetState:
-    return BudgetState.model_validate({
-        **budget.model_dump(mode="python"),
-        "elapsed_seconds": max(budget.elapsed_seconds, elapsed),
-    })
-
-
-def _exhausted(budget: BudgetState) -> bool:
-    return bool(set(budget.exhausted_dimensions) & {"steps", "tool_calls", "time"})
-
-
-def _attempt_exhausted(budget: BudgetState) -> bool:
-    return bool(set(budget.exhausted_dimensions) & {"tool_calls", "time"})
+                    rejected = BudgetManager.timeout(budget, phase="tool.backoff")
+                    budget = rejected.reason.budget
+                    return finish(rejected)
+        budget = BudgetManager.refresh_elapsed(budget, base_elapsed + max(0.0, self._monotonic() - start))
+        return finish(BudgetManager.check_model(budget, phase="tool.after", after=True))
 
 
 def _error(code: ErrorCode, message: str) -> ErrorInfo:

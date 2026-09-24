@@ -3,6 +3,7 @@
 from opspilot.storage.models import (
     AgentRunRecord,
     Base,
+    BudgetStopRecord,
     DiagnosisResultRecord,
     DiagnosisTaskRecord,
     EvidenceMutationError,
@@ -22,6 +23,7 @@ from opspilot.storage.planning_rounds import (
 __all__ = [
     "AgentRunRecord",
     "Base",
+    "BudgetStopRecord",
     "DiagnosisResultRecord",
     "DiagnosisTaskRecord",
     "EvidenceMutationError",

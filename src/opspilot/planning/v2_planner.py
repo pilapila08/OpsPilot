@@ -12,7 +12,9 @@ from pydantic import JsonValue
 from opspilot.agent.schemas import BudgetState, StrictSchema
 from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.llm.audit import ModelAuditError, ModelAuditRepository, ModelCallAttempt
-from opspilot.llm.budget import consume_retry, consume_usage, ensure_model_budget
+from opspilot.llm.budget import (
+    complete_with_budget, consume_retry, ensure_model_budget, ensure_planner_budget,
+)
 from opspilot.llm.client import StructuredModelClient
 from opspilot.llm.errors import ModelBudgetError, ModelExternalError, ModelGatewayError, ModelSchemaError
 from opspilot.llm.models import (
@@ -75,7 +77,7 @@ class V2Planner:
                 budget,
             )
         try:
-            ensure_model_budget(budget)
+            ensure_planner_budget(budget)
             prompt_id = self._audit.register_prompt(self._prompt)
         except ModelGatewayError as exc:
             raise V2PlanningError(exc.to_error_info(retryable=False), budget) from None
@@ -107,7 +109,7 @@ class V2Planner:
         semantic_retries = 0
         while True:
             try:
-                ensure_model_budget(current)
+                ensure_planner_budget(current)
             except ModelBudgetError as exc:
                 raise V2PlanningError(exc.to_error_info(retryable=False), current) from None
             request = StructuredModelRequest(
@@ -117,32 +119,37 @@ class V2Planner:
             started_at = datetime.now(UTC)
             started_clock = perf_counter()
             try:
-                result = await self._client.complete(request, PlanDecisionV2)
+                result, current = await complete_with_budget(
+                    self._client, request, PlanDecisionV2, current, phase="planner",
+                )
             except ModelGatewayError as exc:
                 latency_ms = exc.latency_ms if exc.latency_ms is not None else max(
                     0, round((perf_counter() - started_clock) * 1_000)
                 )
                 usage = exc.usage or ModelUsage()
-                current = consume_usage(current, usage=usage, latency_ms=latency_ms)
+                current = exc.budget or current
                 call_ids.append(self._record(
                     run_id=run_id, prompt_id=prompt_id, round_no=round_no,
                     attempt_index=len(call_ids), started_at=started_at,
                     usage=usage, latency_ms=latency_ms, model_version=exc.model_version,
                     decision=None, error_code=exc.code, budget=current,
                 ))
+                if exc.budget_stop is not None:
+                    raise V2PlanningError(exc.to_error_info(retryable=False), current) from None
+                try:
+                    ensure_model_budget(current, phase="planner.after", after=True)
+                except ModelBudgetError as budget_exc:
+                    raise V2PlanningError(budget_exc.to_error_info(retryable=False), current) from None
                 if not isinstance(exc, ModelSchemaError) or schema_retries >= self._schema_retries:
                     raise V2PlanningError(exc.to_error_info(retryable=False), current) from None
                 try:
-                    current = consume_retry(current)
+                    current = consume_retry(current, phase="planner.retry")
                 except ModelBudgetError as budget_exc:
                     raise V2PlanningError(budget_exc.to_error_info(retryable=False), current) from None
                 schema_retries += 1
                 messages.append(ModelMessage(role=ModelRole.DEVELOPER, content=_SCHEMA_RETRY))
                 continue
 
-            current = consume_usage(
-                current, usage=result.metadata.usage, latency_ms=result.metadata.latency_ms
-            )
             admitted = validator.validate(
                 result.output, intent=intent, round_no=round_no,
                 evidence_ids=observation.evidence_ids,
@@ -159,6 +166,10 @@ class V2Planner:
                 decision=result.output, error_code=error.code if error else None,
                 budget=current,
             ))
+            try:
+                ensure_model_budget(current, phase="planner.after", after=True)
+            except ModelBudgetError as exc:
+                raise V2PlanningError(exc.to_error_info(retryable=False), current) from None
             if error is None:
                 assert isinstance(admitted, AdmittedDecisionV2)
                 return V2PlannerOutcome(
@@ -168,7 +179,7 @@ class V2Planner:
             if error.code is ErrorCode.BUDGET_EXCEEDED or semantic_retries >= self._semantic_retries:
                 raise V2PlanningError(error, current)
             try:
-                current = consume_retry(current)
+                current = consume_retry(current, phase="planner.retry")
             except ModelBudgetError as exc:
                 raise V2PlanningError(exc.to_error_info(retryable=False), current) from None
             semantic_retries += 1

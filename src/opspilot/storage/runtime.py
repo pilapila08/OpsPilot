@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
 
@@ -11,8 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from opspilot.agent.schemas import BudgetState
 from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.budget import BudgetStopReason
 from opspilot.storage.contracts import (
+    BudgetStopSnapshot,
     ResultSnapshot,
     RunSnapshot,
     RuntimePersistenceError,
@@ -20,6 +24,7 @@ from opspilot.storage.contracts import (
 )
 from opspilot.storage.models import (
     AgentRunRecord,
+    BudgetStopRecord,
     DiagnosisResultRecord,
     DiagnosisTaskRecord,
 )
@@ -117,6 +122,44 @@ class SQLAlchemyRuntimeRepository:
             state=state,
         )
 
+    def append_budget_stop(self, stop: BudgetStopSnapshot) -> None:
+        run = self._session.get(AgentRunRecord, stop.run_id)
+        if run is None or run.trace_id != stop.trace_id:
+            raise RuntimePersistenceError("budget stop Run and Trace do not match")
+        existing = self._session.get(BudgetStopRecord, stop.run_id)
+        if existing is not None:
+            if _budget_stop_from_row(existing, run.trace_id) == stop:
+                return
+            raise RuntimePersistenceError("budget stop already exists with different facts")
+        self._session.add(BudgetStopRecord(
+            run_id=stop.run_id,
+            dimension=stop.reason.dimension,
+            phase=stop.reason.phase,
+            step_no=stop.reason.step_no,
+            kind=stop.reason.kind,
+            requested=stop.reason.requested,
+            budget_payload=stop.reason.budget.model_dump(mode="json"),
+            round_no=stop.round_no,
+            created_at=stop.recorded_at,
+        ))
+        try:
+            self._session.commit()
+        except SQLAlchemyError:
+            self._session.rollback()
+            existing = self._session.get(BudgetStopRecord, stop.run_id)
+            if existing is not None and _budget_stop_from_row(existing, run.trace_id) == stop:
+                return
+            raise RuntimePersistenceError("budget stop could not be persisted") from None
+
+    def budget_stops_for_trace(self, trace_id: str) -> tuple[BudgetStopSnapshot, ...]:
+        rows = self._session.scalars(
+            select(BudgetStopRecord)
+            .join(AgentRunRecord, BudgetStopRecord.run_id == AgentRunRecord.id)
+            .where(AgentRunRecord.trace_id == trace_id)
+            .order_by(BudgetStopRecord.created_at, BudgetStopRecord.run_id)
+        ).all()
+        return tuple(_budget_stop_from_row(row, trace_id) for row in rows)
+
     def save_state(self, run_id: str, state: AgentState) -> None:
         row = self._session.get(AgentRunRecord, run_id)
         if row is None or row.task_id != state.task_id or row.trace_id != state.trace_id:
@@ -193,6 +236,7 @@ class InMemoryRuntimeRepository:
         self.tasks: dict[str, TaskSnapshot] = {}
         self.runs: dict[str, RunSnapshot] = {}
         self.results: dict[str, ResultSnapshot] = {}
+        self.budget_stops: dict[str, BudgetStopSnapshot] = {}
 
     def create_task(self, task: TaskSnapshot) -> None:
         if task.task_id in self.tasks:
@@ -229,6 +273,23 @@ class InMemoryRuntimeRepository:
     def get_run(self, run_id: str) -> RunSnapshot | None:
         return self.runs.get(run_id)
 
+    def append_budget_stop(self, stop: BudgetStopSnapshot) -> None:
+        run = self.runs.get(stop.run_id)
+        if run is None or run.state.trace_id != stop.trace_id:
+            raise RuntimePersistenceError("budget stop Run and Trace do not match")
+        existing = self.budget_stops.get(stop.run_id)
+        if existing is not None:
+            if existing == stop:
+                return
+            raise RuntimePersistenceError("budget stop already exists with different facts")
+        self.budget_stops[stop.run_id] = stop
+
+    def budget_stops_for_trace(self, trace_id: str) -> tuple[BudgetStopSnapshot, ...]:
+        return tuple(sorted(
+            (stop for stop in self.budget_stops.values() if stop.trace_id == trace_id),
+            key=lambda stop: (stop.recorded_at, stop.run_id),
+        ))
+
     def save_state(self, run_id: str, state: AgentState) -> None:
         run = self.runs.get(run_id)
         if run is None or run.task_id != state.task_id or run.state.trace_id != state.trace_id:
@@ -263,3 +324,26 @@ def _matching_task(existing: TaskSnapshot, requested: TaskSnapshot) -> TaskSnaps
     ):
         raise RuntimePersistenceError("idempotency key belongs to a different request")
     return existing
+
+
+def _budget_stop_from_row(row: BudgetStopRecord, trace_id: str) -> BudgetStopSnapshot:
+    budget = BudgetState.model_validate_json(json.dumps(row.budget_payload))
+    reason = BudgetStopReason.model_validate({
+        "dimension": row.dimension,
+        "phase": row.phase,
+        "step_no": row.step_no,
+        "kind": row.kind,
+        "requested": row.requested,
+        "budget": budget,
+    })
+    return BudgetStopSnapshot(
+        run_id=row.run_id,
+        trace_id=trace_id,
+        reason=reason,
+        round_no=row.round_no,
+        recorded_at=_aware(row.created_at),
+    )
+
+
+def _aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

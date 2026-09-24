@@ -118,8 +118,8 @@ class BudgetLimits(StrictSchema):
     max_cost_usd: Decimal = Field(
         default=Decimal("0.15"),
         gt=Decimal("0"),
-        max_digits=10,
-        decimal_places=4,
+        max_digits=12,
+        decimal_places=6,
     )
     timeout_seconds: int = Field(default=90, ge=1, le=3600)
 
@@ -135,8 +135,8 @@ class BudgetState(StrictSchema):
     cost_usd: Decimal = Field(
         default=Decimal("0"),
         ge=Decimal("0"),
-        max_digits=10,
-        decimal_places=4,
+        max_digits=12,
+        decimal_places=6,
     )
     elapsed_seconds: float = Field(default=0, ge=0)
 

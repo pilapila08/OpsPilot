@@ -1,43 +1,86 @@
-"""Budget accounting shared by structured model callers."""
+"""Model boundary adapters for the shared BudgetManager."""
 
 from __future__ import annotations
 
+import asyncio
+from time import perf_counter
+
 from opspilot.agent.schemas import BudgetState
-from opspilot.llm.errors import ModelBudgetError
-from opspilot.llm.models import ModelUsage
+from opspilot.budget import BudgetExceeded, BudgetManager, BudgetRejection
+from opspilot.llm.client import StructuredModelClient
+from opspilot.llm.errors import ModelBudgetError, ModelGatewayError
+from opspilot.llm.models import (
+    ModelUsage, OutputT, StructuredModelRequest, StructuredModelResult,
+)
 
 
-def ensure_model_budget(budget: BudgetState) -> None:
-    if set(budget.exhausted_dimensions) & {"tokens", "cost", "time"}:
-        raise ModelBudgetError("model call budget is exhausted")
+def model_budget_error(rejection: BudgetRejection) -> ModelBudgetError:
+    return ModelBudgetError(
+        rejection.message, budget=rejection.reason.budget, budget_stop=rejection.reason,
+    )
+
+
+def ensure_model_budget(
+    budget: BudgetState, *, phase: str = "model.before", after: bool = False,
+) -> None:
+    rejection = BudgetManager.check_model(budget, phase=phase, after=after)
+    if rejection is not None:
+        raise model_budget_error(rejection)
+
+
+def ensure_planner_budget(budget: BudgetState, *, phase: str = "planner.before") -> None:
+    rejection = BudgetManager.check_planner(budget, phase=phase)
+    if rejection is not None:
+        raise model_budget_error(rejection)
 
 
 def consume_usage(
     budget: BudgetState,
     *,
     usage: ModelUsage,
-    latency_ms: int,
+    elapsed_seconds: float,
 ) -> BudgetState:
-    return BudgetState(
-        limits=budget.limits,
-        steps_used=budget.steps_used,
-        tool_calls_used=budget.tool_calls_used,
-        retries_used=budget.retries_used,
-        tokens_used=budget.tokens_used + usage.total_tokens,
-        cost_usd=budget.cost_usd + usage.cost_usd,
-        elapsed_seconds=budget.elapsed_seconds + latency_ms / 1_000,
+    return BudgetManager.consume_model(
+        budget, tokens=usage.total_tokens, cost=usage.cost_usd,
+        elapsed_seconds=elapsed_seconds,
     )
 
 
-def consume_retry(budget: BudgetState) -> BudgetState:
-    if budget.retries_used >= budget.limits.max_retries:
-        raise ModelBudgetError("model regeneration retry budget is exhausted")
-    return BudgetState(
-        limits=budget.limits,
-        steps_used=budget.steps_used,
-        tool_calls_used=budget.tool_calls_used,
-        retries_used=budget.retries_used + 1,
-        tokens_used=budget.tokens_used,
-        cost_usd=budget.cost_usd,
-        elapsed_seconds=budget.elapsed_seconds,
+def consume_retry(budget: BudgetState, *, phase: str = "model.retry") -> BudgetState:
+    try:
+        return BudgetManager.consume_retry(budget, phase=phase)
+    except BudgetExceeded as exc:
+        raise model_budget_error(exc.rejection) from None
+
+
+async def complete_with_budget(
+    client: StructuredModelClient, request: StructuredModelRequest,
+    output_model: type[OutputT], budget: BudgetState, *, phase: str,
+) -> tuple[StructuredModelResult[OutputT], BudgetState]:
+    """Bound a call by wall time and retain usage even when generation fails.
+
+    Callers audit the response before checking its updated budget, preserving
+    every paid attempt including a success whose usage crosses the run limit.
+    """
+    ensure_model_budget(budget, phase=f"{phase}.before")
+    started = perf_counter()
+    try:
+        async with asyncio.timeout(BudgetManager.remaining_seconds(budget)):
+            result = await client.complete(request, output_model)
+    except TimeoutError:
+        elapsed = max(0.0, perf_counter() - started)
+        updated = consume_usage(budget, usage=ModelUsage(), elapsed_seconds=elapsed)
+        error = model_budget_error(BudgetManager.timeout(updated, phase=f"{phase}.call"))
+        error.latency_ms = round(elapsed * 1_000)
+        raise error from None
+    except ModelGatewayError as exc:
+        exc.budget = consume_usage(
+            budget, usage=exc.usage or ModelUsage(),
+            elapsed_seconds=max(0.0, perf_counter() - started),
+        )
+        raise
+    updated = consume_usage(
+        budget, usage=result.metadata.usage,
+        elapsed_seconds=max(0.0, perf_counter() - started),
     )
+    return result, updated

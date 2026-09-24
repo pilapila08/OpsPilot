@@ -26,7 +26,7 @@ from opspilot.storage.planning_rounds import (
     SQLAlchemyPlanningRoundRepository,
 )
 from opspilot.storage.runtime import SQLAlchemyRuntimeRepository
-from opspilot.storage.contracts import ResultSnapshot
+from opspilot.storage.contracts import BudgetStopSnapshot, ResultSnapshot
 
 _TRACE_ID = re.compile(r"^[a-z][a-z0-9_-]{2,127}$")
 
@@ -66,6 +66,7 @@ class EvidenceTraceView(StrictSchema):
 
 
 class VerificationTraceView(StrictSchema):
+    kind: Literal["budget_stop"] | None = None
     supported: bool | None
     checked_evidence_ids: tuple[str, ...]
     missing_evidence_count: int = Field(ge=0)
@@ -86,6 +87,7 @@ class ResultTraceView(StrictSchema):
 
 class TraceStatistics(StrictSchema):
     planning_rounds: int = Field(ge=0)
+    budget_stops: int = Field(ge=0)
     model_attempts: int = Field(ge=0)
     failed_model_attempts: int = Field(ge=0)
     input_tokens: int = Field(ge=0)
@@ -107,6 +109,7 @@ class TraceView(StrictSchema):
     task: TaskTraceView
     run: RunTraceView
     rounds: tuple[PlanningRoundV2, ...]
+    budget_stops: tuple[BudgetStopSnapshot, ...]
     model_calls: tuple[ModelCallView, ...]
     tool_attempts: tuple[ToolAttemptView, ...]
     evidence: tuple[EvidenceTraceView, ...]
@@ -136,6 +139,7 @@ class TraceQueryService:
         if run is None or run.state.trace_id != trace_id:
             return None
         rounds = SQLAlchemyPlanningRoundRepository(self._session).rounds_for_run(run.run_id)
+        budget_stops = runtime.budget_stops_for_trace(trace_id)
         model_calls = SQLAlchemyModelAuditRepository(self._session).calls_for_trace(trace_id)
         execution = SQLAlchemyExecutionRepository(self._session)
         tool_attempts = execution.attempts_for_trace(trace_id)
@@ -162,6 +166,7 @@ class TraceQueryService:
                 completed_at=_aware(run_row.completed_at) if run_row.completed_at else None,
             ),
             rounds=rounds,
+            budget_stops=budget_stops,
             model_calls=model_calls,
             tool_attempts=tool_attempts,
             evidence=tuple(EvidenceTraceView(
@@ -176,6 +181,7 @@ class TraceQueryService:
             result=_result_view(result) if result is not None else None,
             statistics=TraceStatistics(
                 planning_rounds=len(rounds),
+                budget_stops=len(budget_stops),
                 model_attempts=len(model_calls),
                 failed_model_attempts=sum(not item.success for item in model_calls),
                 input_tokens=sum(item.input_tokens for item in model_calls),
@@ -245,6 +251,7 @@ def _result_view(result: ResultSnapshot) -> ResultTraceView:
         claim_ids=tuple(claim_ids),
         cited_evidence_ids=tuple(dict.fromkeys(cited_ids)),
         verification=VerificationTraceView(
+            kind="budget_stop" if result.schema_version == 3 else None,
             supported=supported if isinstance(supported, bool) else None,
             checked_evidence_ids=tuple(
                 item for item in checked if isinstance(item, str)

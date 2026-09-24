@@ -11,6 +11,7 @@ from typing import Literal, cast
 from pydantic import BaseModel, Field, JsonValue, ValidationError, model_validator
 
 from opspilot.agent.schemas import BudgetState, StrictSchema
+from opspilot.budget import BudgetManager
 from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.evidence.models import Evidence, EvidenceId
 from opspilot.routing.v2 import IntentV2
@@ -273,12 +274,9 @@ class V2PlanValidator:
             return AdmittedDecisionV2(
                 decision_json=decision.model_dump_json(), tool_versions=()
             )
-        if budget.steps_used + len(decision.calls) > budget.limits.max_steps:
-            return _error(ErrorCode.BUDGET_EXCEEDED, "round exceeds step budget")
-        if budget.tool_calls_used + len(decision.calls) > budget.limits.max_tool_calls:
-            return _error(ErrorCode.BUDGET_EXCEEDED, "round exceeds Tool call budget")
-        if set(budget.exhausted_dimensions) & {"tokens", "cost", "time"}:
-            return _error(ErrorCode.BUDGET_EXCEEDED, "round exceeds model budget")
+        rejection = BudgetManager.admit_plan(budget, steps=len(decision.calls))
+        if rejection is not None:
+            return rejection
         versions: list[tuple[str, str]] = []
         timeouts: list[float] = []
         retry_timeouts: list[float] = []
@@ -316,13 +314,12 @@ class V2PlanValidator:
             retry_timeouts.extend(
                 [definition.timeout_seconds] * definition.retry_policy.max_retries
             )
-        retries_left = max(0, budget.limits.max_retries - budget.retries_used)
-        retry_allowance = min(len(retry_timeouts), retries_left)
-        if budget.tool_calls_used + len(decision.calls) + retry_allowance > budget.limits.max_tool_calls:
-            return _error(ErrorCode.BUDGET_EXCEEDED, "round exceeds Tool retry budget")
-        projected = sum(timeouts) + sum(sorted(retry_timeouts, reverse=True)[:retry_allowance])
-        if budget.elapsed_seconds + projected > budget.limits.timeout_seconds:
-            return _error(ErrorCode.BUDGET_EXCEEDED, "round exceeds time budget")
+        rejection = BudgetManager.admit_plan(
+            budget, steps=len(decision.calls), timeouts=tuple(timeouts),
+            retry_timeouts=tuple(retry_timeouts),
+        )
+        if rejection is not None:
+            return rejection
         return AdmittedDecisionV2(
             decision_json=decision.model_dump_json(), tool_versions=tuple(versions)
         )

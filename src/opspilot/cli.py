@@ -55,6 +55,23 @@ def format_trace(view: TraceView) -> str:
             f"prompt={round_item.prompt_version_id}  "
             f"calls={','.join(round_item.call_ids) or '-'}"
         )
+    lines.append(f"Budget stops: {stats.budget_stops}")
+    for stop in view.budget_stops:
+        reason = stop.reason
+        used = reason.budget
+        limits = used.limits
+        lines.extend((
+            f"  Stop: dimension={reason.dimension}  phase={reason.phase}  "
+            f"step={reason.step_no}  round={stop.round_no if stop.round_no is not None else '-'}  "
+            f"kind={reason.kind}  requested={reason.requested}  "
+            f"recorded={stop.recorded_at.isoformat()}",
+            f"    steps={used.steps_used}/{limits.max_steps}  "
+            f"tool_calls={used.tool_calls_used}/{limits.max_tool_calls}  "
+            f"retries={used.retries_used}/{limits.max_retries}  "
+            f"tokens={used.tokens_used}/{limits.max_tokens}  "
+            f"cost_usd={used.cost_usd}/{limits.max_cost_usd}  "
+            f"elapsed_s={used.elapsed_seconds}/{limits.timeout_seconds}",
+        ))
     lines.append(
         f"Model attempts: {stats.model_attempts}  Failed: {stats.failed_model_attempts}  "
         f"Tokens: {stats.input_tokens}+{stats.output_tokens}  "
@@ -93,7 +110,8 @@ def format_trace(view: TraceView) -> str:
         result = view.result
         lines.extend((
             f"Result: {result.status}  confidence={result.confidence}  "
-            f"verified={result.verification.supported}",
+            f"verified={result.verification.supported}  "
+            f"verification_kind={result.verification.kind or 'evidence'}",
             f"Root cause: {result.root_cause}",
             f"Recommendation: {result.recommendation}",
             f"Cited evidence: {','.join(result.cited_evidence_ids) or '-'}",

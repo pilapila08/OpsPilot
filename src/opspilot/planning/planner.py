@@ -11,9 +11,13 @@ from pydantic import JsonValue
 
 from opspilot.agent.schemas import BudgetState, ExecutionPlanV1
 from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.budget import BudgetRejection
 from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.llm.audit import ModelAuditError, ModelAuditRepository, ModelCallAttempt
-from opspilot.llm.budget import consume_retry, consume_usage, ensure_model_budget
+from opspilot.llm.budget import (
+    complete_with_budget, consume_retry, ensure_model_budget,
+    ensure_planner_budget, model_budget_error,
+)
 from opspilot.llm.client import StructuredModelClient
 from opspilot.llm.errors import (
     ModelBudgetError,
@@ -42,8 +46,9 @@ _SCHEMA_REGENERATION = (
 class PlanRejectedError(RuntimeError):
     """A stable validation failure after bounded semantic regeneration."""
 
-    def __init__(self, error: ErrorInfo) -> None:
+    def __init__(self, error: ErrorInfo, budget: BudgetState | None = None) -> None:
         self.error = error
+        self.budget = budget
         super().__init__(error.message)
 
 
@@ -86,7 +91,7 @@ class V1Planner:
                     "planner requires a routed state in PLANNING without a plan",
                 )
             )
-        ensure_model_budget(state.budget)
+        ensure_planner_budget(state.budget)
         try:
             prompt_version_id = self._audit.register_prompt(self._prompt)
         except ModelAuditError:
@@ -99,7 +104,7 @@ class V1Planner:
         plan_retries = 0
 
         while True:
-            ensure_model_budget(budget)
+            ensure_planner_budget(budget)
             attempt_index = len(call_ids)
             request = StructuredModelRequest(
                 messages=tuple(messages),
@@ -109,8 +114,11 @@ class V1Planner:
             started_at = datetime.now(UTC)
             started_clock = perf_counter()
             try:
-                result = await self._client.complete(request, ExecutionPlanV1)
+                result, budget = await complete_with_budget(
+                    self._client, request, ExecutionPlanV1, budget, phase="planner",
+                )
             except ModelGatewayError as exc:
+                budget = exc.budget or budget
                 completed_at = datetime.now(UTC)
                 latency_ms = exc.latency_ms if exc.latency_ms is not None else max(
                     0, round((perf_counter() - started_clock) * 1_000)
@@ -129,22 +137,20 @@ class V1Planner:
                         model_version=exc.model_version,
                         plan=None,
                         error_code=exc.code,
+                        budget=budget,
                     )
                 )
-                budget = consume_usage(budget, usage=usage, latency_ms=latency_ms)
+                if exc.budget_stop is not None:
+                    raise
+                ensure_model_budget(budget, phase="planner.after", after=True)
                 if not isinstance(exc, ModelSchemaError) or schema_retries >= self._settings.max_schema_retries:
                     raise
                 schema_retries += 1
-                budget = consume_retry(budget)
+                budget = consume_retry(budget, phase="planner.retry")
                 messages.append(ModelMessage(role=ModelRole.DEVELOPER, content=_SCHEMA_REGENERATION))
                 continue
 
             completed_at = datetime.now(UTC)
-            budget = consume_usage(
-                budget,
-                usage=result.metadata.usage,
-                latency_ms=result.metadata.latency_ms,
-            )
             validation = validator.validate(result.output, intent=state.intent, budget=budget)
             error = validation if isinstance(validation, ErrorInfo) else None
             call_ids.append(
@@ -160,9 +166,11 @@ class V1Planner:
                     model_version=result.metadata.model_version,
                     plan=result.output,
                     error_code=error.code if error is not None else None,
+                    budget=budget,
                 )
             )
             if error is None:
+                ensure_model_budget(budget, phase="planner.after", after=True)
                 assert not isinstance(validation, ErrorInfo)
                 return PlannerOutcome(
                     state=state.with_execution_plan(validation.plan, budget),
@@ -171,11 +179,13 @@ class V1Planner:
                     llm_call_ids=tuple(call_ids),
                 )
             if error.code is ErrorCode.BUDGET_EXCEEDED:
-                raise ModelBudgetError(error.message)
+                if isinstance(error, BudgetRejection):
+                    raise model_budget_error(error)
+                raise ModelBudgetError(error.message, budget=budget)
             if plan_retries >= self._settings.max_plan_retries:
-                raise PlanRejectedError(error)
+                raise PlanRejectedError(error, budget)
             plan_retries += 1
-            budget = consume_retry(budget)
+            budget = consume_retry(budget, phase="planner.retry")
             messages.append(
                 ModelMessage(
                     role=ModelRole.DEVELOPER,
@@ -202,6 +212,7 @@ class V1Planner:
         model_version: str | None,
         plan: ExecutionPlanV1 | None,
         error_code: ErrorCode | None,
+        budget: BudgetState,
     ) -> str:
         assert state.intent is not None
         request_payload: dict[str, JsonValue] = {
@@ -242,7 +253,7 @@ class V1Planner:
                 )
             )
         except ModelAuditError:
-            raise ModelExternalError("model call audit could not be persisted") from None
+            raise ModelExternalError("model call audit could not be persisted", budget=budget) from None
         return recorded.call_id
 
 

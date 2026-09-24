@@ -23,6 +23,7 @@ CORE_TABLES = {
     "diagnosis_results",
     "prompt_versions",
     "planning_rounds",
+    "budget_stops",
 }
 
 
@@ -156,4 +157,46 @@ def test_v2_round_migration_preserves_existing_v1_run(tmp_path: Path) -> None:
             "SELECT runtime_version, status FROM agent_runs WHERE id = 'run_legacy'"
         )).one() == ("v1", "COMPLETED")
         assert connection.execute(text("SELECT count(*) FROM planning_rounds")).scalar_one() == 0
+    engine.dispose()
+
+
+def test_budget_stop_migration_is_additive_and_reversible(tmp_path: Path) -> None:
+    database_path = tmp_path / "budget-stop-migration.db"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = migration_config(database_url)
+    command.upgrade(config, "20260923_0004")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO diagnosis_tasks (id, user_query, namespace, status) "
+            "VALUES ('task_old', 'diagnose api', 'team-a', 'PARTIAL')"
+        ))
+        connection.execute(text(
+            "INSERT INTO agent_runs (id, task_id, trace_id, attempt_no, status, "
+            "state_payload, runtime_version) "
+            "VALUES ('run_old', 'task_old', 'trace_old', 1, 'PARTIAL', '{}', 'v1')"
+        ))
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM budget_stops")).scalar_one() == 0
+        assert connection.execute(text(
+            "SELECT trace_id, runtime_version FROM agent_runs WHERE id='run_old'"
+        )).one() == ("trace_old", "v1")
+        context = MigrationContext.configure(connection)
+        assert compare_metadata(context, Base.metadata) == []
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO budget_stops (run_id, dimension, phase, step_no, kind, "
+                "requested, budget_payload, created_at) VALUES "
+                "('run_old', 'invalid', 'planner.before', 1, 'exhausted', 0, '{}', CURRENT_TIMESTAMP)"
+            ))
+    command.downgrade(config, "20260923_0004")
+    assert "budget_stops" not in inspect(engine).get_table_names()
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT id FROM agent_runs WHERE id='run_old'"
+        )).scalar_one() == "run_old"
+    command.upgrade(config, "head")
+    assert "budget_stops" in inspect(engine).get_table_names()
     engine.dispose()

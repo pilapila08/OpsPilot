@@ -14,14 +14,17 @@ from pydantic import Field, model_validator
 
 from opspilot.agent.schemas import BudgetLimits, BudgetState, StrictSchema
 from opspilot.agent.state import AgentState, AgentStatus
+from opspilot.budget import BudgetExceeded, BudgetManager, BudgetRejection, BudgetStopReason
 from opspilot.diagnosis.v2 import V2Verifier
 from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.execution.repository import ExecutionRepository
 from opspilot.execution.v2 import V2RoundExecutor
 from opspilot.integrations.kubernetes.models import NamespaceName
+from opspilot.llm.errors import ModelGatewayError
 from opspilot.planning.v2 import ObservationSummaryV2, V2PlanValidator
 from opspilot.planning.v2_planner import V2Planner, V2PlanningError
 from opspilot.routing.v2 import IntentV2, V2IntentRouter
+from opspilot.runtime.budget import persist_budget_partial
 from opspilot.storage.contracts import (
     ResultRepository, ResultSnapshot, RunRepository, RunSnapshot,
     RuntimePersistenceError, TaskRepository, TaskSnapshot,
@@ -63,7 +66,7 @@ class V2RunResult(StrictSchema):
             raise ValueError("V2 runtime result requires terminal state")
         if self.status in {AgentStatus.COMPLETED, AgentStatus.PARTIAL} and self.diagnosis is None:
             raise ValueError("V2 completed or partial state requires Result")
-        if self.diagnosis is not None and self.diagnosis.schema_version != 2:
+        if self.diagnosis is not None and self.diagnosis.schema_version not in {2, 3}:
             raise ValueError("V2 runtime requires versioned Result")
         return self
 
@@ -114,9 +117,14 @@ class ObservationRuntimeV2:
         self._runs.create_run(RunSnapshot(
             run_id=run_id, task_id=task_id, state=state, runtime_version="v2",
         ))
+        active_round: int | None = None
         try:
             state = self._transition(state, AgentStatus.ROUTING)
+            state = self._with_budget(state, state.budget, started)
             self._runs.save_state(run_id, state)
+            rejected = BudgetManager.check_model(state.budget, phase="router.before")
+            if rejected is not None:
+                raise BudgetExceeded(rejected)
             routed = await self._router.route(
                 run_id=run_id, query=request.query, namespace=request.namespace,
                 budget=state.budget,
@@ -144,6 +152,12 @@ class ObservationRuntimeV2:
             observation_signatures: set[str] = set()
 
             for round_no in range(1, 5):
+                active_round = round_no
+                state = self._with_budget(state, state.budget, started)
+                self._runs.save_state(run_id, state)
+                rejected = BudgetManager.check_planner(state.budget, phase="planner.before")
+                if rejected is not None:
+                    return self._budget_partial(run_id, state, rejected.reason, round_no)
                 evidence = self._tools.evidence_for_trace(trace_id)
                 observation = ObservationSummaryV2.from_persisted(
                     trace_id, evidence,
@@ -164,11 +178,8 @@ class ObservationRuntimeV2:
                 except V2PlanningError as exc:
                     state = self._with_budget(state, exc.budget, started)
                     self._runs.save_state(run_id, state)
-                    if exc.error.code is ErrorCode.BUDGET_EXCEEDED and evidence:
-                        return self._verify(
-                            run_id, state, intent, force_partial=True,
-                            terminal=AgentStatus.BUDGET_EXCEEDED, error=exc.error,
-                        )
+                    if isinstance(exc.error, BudgetRejection):
+                        return self._budget_partial(run_id, state, exc.error.reason, round_no)
                     return self._fail(run_id, state, exc.error)
                 state = self._with_budget(state, outcome.budget, started)
                 self._runs.save_state(run_id, state)
@@ -180,6 +191,8 @@ class ObservationRuntimeV2:
                     used_requests=frozenset(used_requests),
                     allowed_resources=resources, budget=state.budget,
                 )
+                if isinstance(renewed, BudgetRejection):
+                    return self._budget_partial(run_id, state, renewed.reason, round_no)
                 if isinstance(renewed, ErrorInfo) or renewed != outcome.admitted:
                     return self._fail(
                         run_id, state,
@@ -216,6 +229,8 @@ class ObservationRuntimeV2:
                 ).execute(run_id=run_id, state=state, admitted=outcome.admitted)
                 state = self._with_budget(execution.state, execution.state.budget, started)
                 self._runs.save_state(run_id, state)
+                if execution.budget_stop is not None:
+                    return self._budget_partial(run_id, state, execution.budget_stop, round_no)
                 if execution.error is not None:
                     code = execution.error.code
                     if code in {ErrorCode.POLICY_REJECTED, ErrorCode.TOOL_NOT_FOUND}:
@@ -223,7 +238,7 @@ class ObservationRuntimeV2:
                     if state.evidence_ids:
                         return self._verify(
                             run_id, state, intent, force_partial=True,
-                            terminal=(AgentStatus.BUDGET_EXCEEDED if code is ErrorCode.BUDGET_EXCEEDED else AgentStatus.PARTIAL),
+                            terminal=AgentStatus.PARTIAL,
                             error=execution.error,
                         )
                     return self._fail(run_id, state, execution.error)
@@ -244,6 +259,17 @@ class ObservationRuntimeV2:
                 state = self._transition(state, AgentStatus.PLANNING)
                 self._runs.save_state(run_id, state)
             raise AssertionError("bounded V2 round loop did not terminate")
+        except BudgetExceeded as exc:
+            state = self._with_budget(state, exc.budget, started)
+            self._runs.save_state(run_id, state)
+            return self._budget_partial(run_id, state, exc.rejection.reason, active_round)
+        except ModelGatewayError as exc:
+            if exc.budget is not None:
+                state = self._with_budget(state, exc.budget, started)
+                self._runs.save_state(run_id, state)
+            if exc.budget_stop is not None:
+                return self._budget_partial(run_id, state, exc.budget_stop, active_round)
+            return self._fail(run_id, state, exc.to_error_info(retryable=False))
         except (RuntimePersistenceError, RoundPersistenceError):
             return self._fail(run_id, state, ErrorInfo.from_code(
                 ErrorCode.EXTERNAL_SERVICE_ERROR, "V2 audit could not be persisted"
@@ -313,6 +339,26 @@ class ObservationRuntimeV2:
             self._runs.save_state(run_id, state)
         return self._result(run_id, state, error)
 
+    def _budget_partial(
+        self, run_id: str, state: AgentState, reason: BudgetStopReason,
+        round_no: int | None,
+    ) -> V2RunResult:
+        try:
+            state = persist_budget_partial(
+                run_id=run_id, result_id=self._id("result"), state=state,
+                reason=reason, runs=self._runs, results=self._results,
+                evidence_repository=self._tools, at=self._clock(), round_no=round_no,
+            )
+        except RuntimePersistenceError:
+            return self._fail(run_id, state, ErrorInfo.from_code(
+                ErrorCode.EXTERNAL_SERVICE_ERROR, "budget audit could not be persisted",
+                retryable=False,
+            ))
+        return self._result(run_id, state, ErrorInfo.from_code(
+            ErrorCode.BUDGET_EXCEEDED, "diagnosis stopped at the configured budget",
+            retryable=False,
+        ))
+
     def _result(self, run_id: str, state: AgentState, error: ErrorInfo | None) -> V2RunResult:
         return V2RunResult(
             task_id=state.task_id, run_id=run_id, trace_id=state.trace_id,
@@ -324,10 +370,7 @@ class ObservationRuntimeV2:
         return state.transition_to(target, at=max(self._clock(), state.updated_at))
 
     def _with_budget(self, state: AgentState, budget: BudgetState, started: float) -> AgentState:
-        elapsed = max(budget.elapsed_seconds, self._monotonic() - started)
-        updated = BudgetState.model_validate({
-            **budget.model_dump(mode="python"), "elapsed_seconds": elapsed,
-        })
+        updated = BudgetManager.refresh_elapsed(budget, self._monotonic() - started)
         return AgentState.model_validate({
             **state.model_dump(mode="python"), "budget": updated,
         })

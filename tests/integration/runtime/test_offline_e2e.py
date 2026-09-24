@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
 
@@ -345,9 +346,82 @@ def test_router_token_budget_stops_before_planner_model_call(tmp_path: Path) -> 
         assert output.status is AgentStatus.BUDGET_EXCEEDED
         assert output.error is not None and output.error.code is ErrorCode.BUDGET_EXCEEDED
         assert output.state.budget.tokens_used == 50
+        assert output.diagnosis is not None and output.diagnosis.status == "PARTIAL"
+        assert output.diagnosis.schema_version == 3
+        assert output.diagnosis.claims_payload == ()
+        assert output.diagnosis.verification_payload["kind"] == "budget_stop"
+        assert output.diagnosis.verification_payload["checked_evidence_ids"] == []
+        (stop,) = SQLAlchemyRuntimeRepository(session).budget_stops_for_trace(output.trace_id)
+        assert (stop.reason.dimension, stop.reason.phase, stop.reason.step_no) == (
+            "tokens", "planner.before", 1,
+        )
+        assert stop.reason.budget.tokens_used == 50
+        assert stop.round_no is None
         assert client.call_count == 1
         assert [item.component for item in session.scalars(select(LLMCallRecord)).all()] == ["router"]
         assert session.scalars(select(ToolCallRecord)).all() == []
+    engine.dispose()
+
+
+def test_failed_router_model_usage_is_retained_before_retry_budget_stop(tmp_path: Path) -> None:
+    engine = _database(tmp_path)
+    client = ScriptedModelClient([ScriptedModelResponse(
+        payload={"invalid": "router"}, input_tokens=12, output_tokens=8,
+        cost_usd=Decimal("0.000200"),
+    )])
+    with Session(engine) as session:
+        output = asyncio.run(_runtime(
+            session, client, SequentialIds(), budget_limits=BudgetLimits(max_retries=0),
+        ).run(REQUEST))
+        assert output.status is AgentStatus.BUDGET_EXCEEDED
+        assert output.error is not None and output.error.code is ErrorCode.BUDGET_EXCEEDED
+        assert output.diagnosis is not None and output.diagnosis.schema_version == 3
+        assert output.diagnosis.verification_payload["checked_evidence_ids"] == []
+        assert output.state.budget.tokens_used == 20
+        assert output.state.budget.cost_usd == Decimal("0.0002")
+        calls = session.scalars(select(LLMCallRecord)).all()
+        assert len(calls) == 1
+        assert calls[0].success is False
+        assert calls[0].error_code == ErrorCode.SCHEMA_VALIDATION.value
+        assert (calls[0].input_tokens, calls[0].output_tokens) == (12, 8)
+        assert calls[0].cost_usd == Decimal("0.000200")
+        assert client.call_count == 1
+        assert session.scalars(select(ToolCallRecord)).all() == []
+        (stop,) = SQLAlchemyRuntimeRepository(session).budget_stops_for_trace(output.trace_id)
+        assert (stop.reason.dimension, stop.reason.phase, stop.reason.step_no) == (
+            "retries", "router.retry", 1,
+        )
+        assert stop.reason.budget.tokens_used == 20
+    engine.dispose()
+
+
+def test_diagnosis_model_overage_cannot_complete_after_evidence(tmp_path: Path) -> None:
+    engine = _database(tmp_path)
+    client = ScriptedModelClient(_model_steps())
+    with Session(engine) as session:
+        output = asyncio.run(_runtime(
+            session, client, SequentialIds(), budget_limits=BudgetLimits(max_tokens=300),
+        ).run(REQUEST))
+        assert output.status is AgentStatus.BUDGET_EXCEEDED
+        assert output.error is not None and output.error.code is ErrorCode.BUDGET_EXCEEDED
+        assert output.diagnosis is not None
+        assert output.diagnosis.status == "PARTIAL"
+        assert output.diagnosis.schema_version == 3
+        assert output.diagnosis.claims_payload == ()
+        checked = output.diagnosis.verification_payload["checked_evidence_ids"]
+        assert isinstance(checked, list) and len(checked) == 5
+        assert output.state.budget.tokens_used == 310
+        assert client.call_count == 3
+        assert [item.component for item in session.scalars(
+            select(LLMCallRecord).order_by(LLMCallRecord.sequence_no)
+        ).all()] == ["router", "planner", "diagnosis"]
+        assert len(session.scalars(select(ToolCallRecord)).all()) == 4
+        assert len(session.scalars(select(EvidenceRecord)).all()) == 5
+        (stop,) = SQLAlchemyRuntimeRepository(session).budget_stops_for_trace(output.trace_id)
+        assert (stop.reason.dimension, stop.reason.phase, stop.reason.step_no) == (
+            "tokens", "diagnosis.after", 5,
+        )
+        assert stop.reason.budget.tokens_used == 310
     engine.dispose()
 
 

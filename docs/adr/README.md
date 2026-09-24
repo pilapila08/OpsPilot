@@ -46,3 +46,4 @@ NNNN-short-title.md
 - [ADR 0004：Strict Structured Output 扁平传输封套](0004-strict-model-wire-envelope.md)
 - [ADR 0005：V2 有界观察驱动多轮规划](0005-bounded-observation-planning-v2.md)
 - [ADR 0006：本地 CLI Trace 查询与安全投影](0006-local-trace-query.md)
+- [ADR 0007：统一预算准入与可审计的 Partial](0007-central-budget-and-audited-partial.md)
