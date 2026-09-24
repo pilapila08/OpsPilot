@@ -1,6 +1,6 @@
 # V3-003: Offline Replay 端到端演示
 
-- Status: Planned
+- Status: Done
 - Phase: V3
 - Depends on: V3-001、V3-002
 
@@ -26,11 +26,15 @@
 
 ## 验收
 
-- [ ] 清空模型/集群环境后单命令端到端完成。
-- [ ] COMPLETED 与受预算限制的 PARTIAL 演示可重复运行并查询 Trace。
-- [ ] 输出可读且不泄漏原始敏感内容；CLI 退出码与结果明确。
-- [ ] CLI 集成测试、默认 pytest、strict mypy 通过。
-- [ ] 开发文档、STATUS 和下一位 AI 的交接文档完整。
+- [x] 清空模型/集群环境后单命令端到端完成。
+- [x] COMPLETED 与受预算限制的 PARTIAL 演示可重复运行并查询 Trace。
+- [x] 输出可读且不泄漏原始敏感内容；CLI 退出码与结果明确。
+- [x] CLI 集成测试、默认 pytest、strict mypy 通过。
+- [x] 开发文档、STATUS 和下一位 AI 的交接文档完整。
+
+## 验收结果
+
+2026-09-25：5 项 Demo CLI 集成测试通过，默认 431 passed、4 skipped，strict mypy 177 文件通过。editable 安装后的 `opspilot.exe demo --scenario oom` 已实跑 COMPLETED；`--max-steps 1` 在第二轮 Planner 前产生 PARTIAL。默认 CrashLoop 为四类、五条 Evidence；额外 OOM 场景展示四轮规划。完整操作与退出码见 `docs/development.md`，交接见 `docs/handoffs/2026-09-25-v3-runtime.md`。
 
 ## 不做
 

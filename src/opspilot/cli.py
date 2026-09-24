@@ -1,15 +1,22 @@
-"""Local, read-only operational commands."""
+"""Local audit queries and deterministic offline demonstrations."""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
+from alembic.util.exc import CommandError
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.engine import URL
 
+from opspilot.agent.schemas import BudgetLimits
+from opspilot.agent.state import AgentStatus
+from opspilot.storage.contracts import RuntimePersistenceError
 from opspilot.tracing.query import TraceDatabaseUnavailable, TraceView, query_trace
 
 
@@ -20,9 +27,49 @@ def main(argv: Sequence[str] | None = None) -> int:
     trace_parser.add_argument("trace_id")
     trace_parser.add_argument("--format", choices=("text", "json"), default="text")
     trace_parser.add_argument("--json", action="store_true", help="alias for --format json")
+    trace_parser.add_argument("--database", type=Path, help="query this local SQLite file")
+    demo_parser = commands.add_parser("demo", help="run a Case offline and print its persisted trace")
+    demo_parser.add_argument("--scenario", choices=("crashloop", "oom"), default="crashloop")
+    demo_parser.add_argument("--database", type=Path, default=Path("var/demo.db"))
+    demo_parser.add_argument("--json", action="store_true")
+    for option in ("steps", "tool-calls", "retries", "tokens"):
+        demo_parser.add_argument(f"--max-{option}", type=int)
+    demo_parser.add_argument("--max-cost-usd")
+    demo_parser.add_argument("--timeout-seconds", type=int)
     args = parser.parse_args(argv)
+    if args.command == "demo":
+        from opspilot.runtime.demo import run_demo
+
+        limits = {key: getattr(args, key) for key in (
+            "max_steps", "max_tool_calls", "max_retries", "max_tokens",
+            "max_cost_usd", "timeout_seconds",
+        ) if getattr(args, key) is not None}
+        try:
+            budget = BudgetLimits.model_validate_json(json.dumps(limits))
+        except ValueError:
+            parser.error("invalid demo budget limits; use positive values (retries may be zero)")
+        try:
+            demo_view = asyncio.run(run_demo(
+                database_path=args.database, scenario=args.scenario, budget_limits=budget,
+            ))
+        except (OSError, ValueError, SQLAlchemyError, RuntimePersistenceError, CommandError):
+            print("Offline demo could not load its Case or persist its audit database.", file=sys.stderr)
+            return 1
+        notice = (
+            "Offline Replay: no remote model or cluster. Usage is fixture/scripted data, not billed inference.\n"
+            f"Database: {args.database.resolve()}"
+        )
+        print(notice, file=sys.stderr if args.json else sys.stdout)
+        print(json.dumps(demo_view.model_dump(mode="json"), ensure_ascii=False, indent=2)
+              if args.json else format_trace(demo_view))
+        if demo_view.run.status is AgentStatus.COMPLETED:
+            return 0
+        return 2 if demo_view.result is not None and demo_view.result.status == "PARTIAL" else 1
     if args.command == "trace":
-        database_url = os.environ.get("OPSPILOT_DATABASE_URL", "sqlite:///./opspilot.db")
+        database_url = (
+            URL.create("sqlite", database=str(args.database.resolve())).render_as_string(hide_password=False)
+            if args.database else os.environ.get("OPSPILOT_DATABASE_URL", "sqlite:///./opspilot.db")
+        )
         try:
             view = query_trace(database_url, args.trace_id)
         except (TraceDatabaseUnavailable, SQLAlchemyError, ValueError, OSError):
@@ -47,7 +94,8 @@ def format_trace(view: TraceView) -> str:
         f"Run: {run.run_id}  Task: {run.task_id}  Attempt: {run.attempt_no}",
         f"Runtime: {run.runtime_version} ({run.planning_mode})  Status: {run.status.value}",
         f"Started: {run.started_at.isoformat()}",
-        f"Planning rounds: {stats.planning_rounds}",
+        f"Planning rounds: {stats.planning_rounds}"
+        + (" (V1 single-pass plan; no V2 round records)" if run.runtime_version == "v1" else ""),
     ]
     for round_item in view.rounds:
         lines.append(
@@ -115,6 +163,10 @@ def format_trace(view: TraceView) -> str:
             f"Root cause: {result.root_cause}",
             f"Recommendation: {result.recommendation}",
             f"Cited evidence: {','.join(result.cited_evidence_ids) or '-'}",
+            f"Verification: supported={result.verification.supported}  "
+            f"checked={len(result.verification.checked_evidence_ids)}  "
+            f"missing={result.verification.missing_evidence_count}  "
+            f"contradictions={result.verification.contradiction_count}",
         ))
     return "\n".join(lines)
 
