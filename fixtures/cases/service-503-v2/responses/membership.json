@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "team-a", "service_name": "api", "service_uid": "service-1",
+    "service_resource_version": "12", "deployment_name": "api", "deployment_uid": "deployment-1",
+    "deployment_generation": 1, "observed_generation": 1,
+    "desired_replicas": 1, "ready_replicas": 1, "selector_count": 1,
+    "pods": [{"name": "api-001", "uid": "pod-1", "resource_version": "3",
+              "ready": true, "terminating": false, "selector_matches": true,
+              "template_hash": "hash-a"}],
+    "truncated": false, "rollout_ambiguous": false,
+    "observed_at": "2026-09-24T10:00:00Z"
+  },
+  "metadata": {"call_id": "call_membership", "tool_name": "k8s.get_service_membership", "source": "kubernetes", "duration_ms": 1, "tool_version": "v2"},
+  "error": null
+}

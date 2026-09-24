@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "team-a", "name": "api", "uid": "service-1", "resource_version": "12",
+    "selector": {"app": "api"}, "service_type": "ClusterIP",
+    "ports": [{"name": "http", "protocol": "TCP", "port": 80, "target_port": 8080}]
+  },
+  "metadata": {"call_id": "call_service", "tool_name": "k8s.get_service", "source": "kubernetes", "duration_ms": 1, "tool_version": "v2"},
+  "error": null
+}

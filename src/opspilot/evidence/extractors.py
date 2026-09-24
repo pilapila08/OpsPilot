@@ -282,7 +282,11 @@ def _service_v2(data: ServiceOutputV2, collected_at: datetime) -> tuple[_Observa
         content=f"Service port {item.port} routes to a declared target port.",
         attributes=(
             EvidenceAttribute(key="service_port", value=item.port),
+            EvidenceAttribute(key="service_port_name", value=item.name or ""),
             EvidenceAttribute(key="target_port", value=item.target_port),
+            EvidenceAttribute(key="service_type", value=data.service_type),
+            EvidenceAttribute(key="service_uid", value=data.uid),
+            EvidenceAttribute(key="service_resource_version", value=data.resource_version),
             EvidenceAttribute(key="selector_count", value=len(data.selector)),
         ),
     ) for item in data.ports)
@@ -292,6 +296,10 @@ def _endpoints_v2(data: EndpointsOutputV2, collected_at: datetime) -> tuple[_Obs
     endpoints = [item for group in data.slices for item in group.endpoints]
     ready = sum(item.ready is True for item in endpoints)
     serving = sum(item.serving is True for item in endpoints)
+    unknown_ready = sum(item.ready is None for item in endpoints)
+    terminating_serving = sum(item.terminating is True and item.serving is True for item in endpoints)
+    ports = sorted({(port.name or "", port.protocol, port.port or 0)
+                    for group in data.slices for port in group.ports})
     return (_Observation(
         source="kubernetes_endpoints",
         resource=f"{data.namespace}/service/{data.service_name}",
@@ -301,7 +309,14 @@ def _endpoints_v2(data: EndpointsOutputV2, collected_at: datetime) -> tuple[_Obs
             EvidenceAttribute(key="endpoint_count", value=len(endpoints)),
             EvidenceAttribute(key="ready_endpoint_count", value=ready),
             EvidenceAttribute(key="serving_endpoint_count", value=serving),
+            EvidenceAttribute(key="unknown_ready_endpoint_count", value=unknown_ready),
+            EvidenceAttribute(key="terminating_serving_endpoint_count", value=terminating_serving),
             EvidenceAttribute(key="endpoint_snapshot_truncated", value=data.truncated),
+            EvidenceAttribute(key="endpoint_slice_count", value=len(data.slices)),
+            EvidenceAttribute(key="endpoint_ports", value=json.dumps(ports)),
+            EvidenceAttribute(key="endpoint_versions", value=json.dumps(sorted(
+                (group.uid, group.resource_version) for group in data.slices
+            ))),
         ),
     ),)
 

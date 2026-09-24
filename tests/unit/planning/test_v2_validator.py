@@ -8,6 +8,7 @@ from opspilot.agent.schemas import BudgetLimits, BudgetState
 from opspilot.errors import ErrorCode, ErrorInfo
 from opspilot.evidence.models import Evidence, EvidenceAttribute
 from opspilot.integrations.kubernetes import KubernetesReader
+from opspilot.integrations.kubernetes.v2_client import KubernetesReaderV2
 from opspilot.planning.v2 import (
     AdmittedDecisionV2, ObservationSummaryV2, PlanCallV2,
     PlanDecisionV2, V2PlanValidator,
@@ -15,6 +16,7 @@ from opspilot.planning.v2 import (
 from opspilot.routing.v2 import IntentV2, V2Target
 from opspilot.tools import ToolDefinition, ToolRegistry, ToolRiskLevel
 from opspilot.tools.kubernetes import build_kubernetes_registry
+from opspilot.tools.kubernetes.v2_registry import build_kubernetes_registry_v2
 from opspilot.tools.kubernetes.models import PodStatusInput, PodStatusOutput
 
 
@@ -157,6 +159,28 @@ def test_v2_rejects_expanded_registered_tool_input_model() -> None:
     result = _admit(_decision(), registry=registry)
     assert isinstance(result, ErrorInfo)
     assert result.code is ErrorCode.POLICY_REJECTED
+
+
+def test_service_membership_requires_both_targets_in_scope() -> None:
+    registry = build_kubernetes_registry_v2(cast(KubernetesReaderV2, object()))
+    decision = _decision(_call(
+        "call_membership", tool="k8s.get_service_membership",
+        arguments={"namespace": "opspilot-fixtures", "service_name": "api",
+                   "deployment_name": "backend"},
+    ))
+    validator = V2PlanValidator(registry)
+
+    def admit(resources: frozenset[str]) -> AdmittedDecisionV2 | ErrorInfo:
+        return validator.validate(
+            decision, intent=_intent(), round_no=1, evidence_ids=(),
+            used_call_ids=frozenset(), used_requests=frozenset(),
+            budget=BudgetState(), allowed_resources=resources,
+        )
+
+    rejected = admit(frozenset({"api"}))
+    assert isinstance(rejected, ErrorInfo) and rejected.code is ErrorCode.POLICY_REJECTED
+    admitted = admit(frozenset({"api", "backend"}))
+    assert isinstance(admitted, AdmittedDecisionV2)
 
 
 def test_observation_exposes_only_typed_bounded_facts() -> None:

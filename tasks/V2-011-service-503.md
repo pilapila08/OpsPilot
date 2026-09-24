@@ -1,6 +1,6 @@
 # V2-011: Service 503 拓扑诊断
 
-- Status: Planned
+- Status: Done
 - Phase: V2
 - Depends on: V2-003, V2-004, V2-005
 
@@ -46,7 +46,16 @@
 
 ## 验收条件
 
-- [ ] 503 子因有独立 Evidence 门槛和反证。
-- [ ] 多副本与 rollout 快照不制造错误拓扑结论。
-- [ ] 只读 Replay 和可选隔离 Live smoke 通过。
-- [ ] 默认 pytest、strict mypy 与 STATUS 更新通过。
+- [x] 503 子因有独立 Evidence 门槛和反证。
+- [x] 多副本与 rollout 快照不制造错误拓扑结论。
+- [x] 只读 Replay 和可选隔离 Live smoke 通过。（Replay 已通过；可选 Live 未运行）
+- [x] 默认 pytest、strict mypy 与 STATUS 更新通过。
+
+## 实施记录（2026-09-24）
+
+- 固定 Service-scoped HTTP 503 Prometheus 只读查询；拒绝自定义 PromQL、越界比率和跨 namespace/资源参数。
+- Service/Ingress/EndpointSlice Evidence 加入端口、UID/resourceVersion、未知 readiness、terminating-serving 与快照截断信息。新增 bounded `k8s.get_service_membership`，在 Tool 边界比较真实 Pod 标签，不把标签原文写入 Evidence。
+- 确定性 Verifier 已覆盖四信号同窗的零 ready Endpoint、稳定成员关系证明的 selector 错配，以及健康后端、缺失/陈旧指标、多快照、未知 readiness、rollout 与跨资源反证。
+- targetPort 与 EndpointSlice ready 端口的单一明确错配仅报告 Partial：缺网关侧 503 来源证据时，不声明其导致 503。此项是目前未关闭的因果门槛。
+- `service-503-v2` Case 的无后端、健康后端、selector 错配及端口异常四条分支已通过 SQLite Replay，Tool/Evidence/Result 和轮次均可按 Run 重建。可选 Live 未执行。
+- 默认离线测试 382 passed、3 skipped；strict mypy 覆盖 159 个源文件。操作者确认当前没有网关侧 503 指标，所以端口异常的安全验收结果是明确的 Partial，而非未经证明的根因。未来接入网关侧来源证明可另开增强任务；此限制不阻断当前只读诊断闭环。

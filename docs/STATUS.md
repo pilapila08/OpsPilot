@@ -1,8 +1,8 @@
 # Project Status
 
-- Updated: 2026-09-23
+- Updated: 2026-09-24
 - Current phase: V2 诊断能力扩展（有界多轮 Runtime、Kubernetes V2 与 Prometheus/OOM 纵向切片已实现）
-- Current task: `V2-006-readiness-failure`（In Progress）
+- Current task: `V2-010-git-cicd-post-deployment` 待启动；`V2-006` 保留已完成 Evidence，暂缓待续
 - Repository state: V0 契约 v0.1 已冻结；V1 Offline/Live 与修复侧验收完成；V2-001 已形成版本化架构、ADR 与工作单
 
 ## 已完成
@@ -69,15 +69,16 @@
 - V2 观察摘要现在只投影经白名单校验的类型化事实，Tool Evidence 总量受 100 条契约约束；最小 RBAC 与显式 opt-in Live 测试已写入 `docs/architecture/kubernetes-tools-v2.md`。默认全量 352 passed、2 skipped（V1/V2 Live 均未启用），strict mypy 147 文件通过。
 - V2-005 完成：固定 HTTPS Prometheus Reader 与 CPU/内存/延迟/错误率四个只读 Tool 已加入；空/陈旧/非法数值与权限/超时边界有回归。V2-only OOM Evidence 与确定性 Verifier 以同 Pod/container 的 OOMKilled、内存限额和终止前峰值约束 supported，缺失或冲突保留 Partial。
 - `oom-limit-v2.json` 的峰值存在/缺失分支经完整 SQLite Replay/Runtime/审计通过；原有 OOM/Probe 同症状动态 Tool 分支和 V1 基线仍通过。默认全量 361 passed、3 skipped（含未启用的 Prometheus Live），strict mypy 154 文件通过。真实 Prometheus smoke 尚未执行。
+- V2-011 完成：固定 Service-scoped 503 指标、新增只读 Service membership Tool；Ingress/Service/EndpointSlice/Pod 标签聚合 Evidence 与确定性 Verifier 已覆盖无 ready 后端和稳定 selector 错配。端口异常经独立门槛识别，但因无网关侧 503 来源证明只给 Partial。`service-503-v2` 四条 Case 分支已走通 SQLite Replay；默认离线 382 passed、3 skipped，strict mypy 159 文件通过；可选 Live 未执行。
 
 ## 正在进行
 
-- V2-006 正在进行：V2-only Pod Ready condition、readiness Event 与 Deployment probe Evidence 已实现且不影响 V1；默认全量 363 passed、3 skipped，strict mypy 155 文件通过。EndpointSlice 到 Pod 关联、子因 Verifier、四分支 Replay Case 与恢复快照尚待完成，不能验收为 Done。
+- 当前无进行中的工作单。V2-006 已有 Pod Ready condition、readiness Event 与 Deployment probe Evidence，但 Verifier、四分支 Case 与恢复快照未完成，状态退回 Ready 待续。
 
 ## 下一步
 
-1. 继续 V2-006：先补 EndpointSlice/Pod 关联与端口/路径证据，再实现保守的 Readiness 子因 Verifier 和正反例 Case。
-2. 随后按工作单扩充其余故障规则与 Loki/Git 数据源。
+1. 推进 V2-010 Git/CI 发布类，保持只读、allowlist、限量 diff 和时间/关联反证。
+2. V2-006 保留待续；有网关侧 503 来源指标时，可另开 V2-011 的端口因果增强任务。
 
 ## 已知风险与待决问题
 
@@ -87,6 +88,7 @@
 - SDK 36.0.3 曾将 Previous Logs 字节变成 `repr` 字符串，导致缺少日志 Evidence；Reader 原始字节解码修复后，真实 Live smoke 已通过。外部边界的真实响应形态仍需持续保留专门回归测试。
 - V1 API 无认证且进程内队列不提供崩溃恢复，Live smoke 成功不等于可以公开部署或声明生产可用。
 - V2 的 8 类故障、10+ Tool 和外部数据源仍是设计目标而非实现状态；Prometheus/Loki/Git/CI 接入须使用独立限权配置与真实形态边界测试。
+- Service-scoped 503 比率依赖部署侧 `http_requests_total{namespace,service,status}` 标签；缺此指标则保持 Partial。应用侧 503 指标本身不能证明网关侧端口错配的因果关系。
 
 ## 阻塞项
 

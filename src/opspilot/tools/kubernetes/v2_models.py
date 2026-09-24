@@ -50,6 +50,61 @@ class ServiceOutputV2(StrictSchema):
     service_type: Literal["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
 
 
+class ServiceMembershipInputV2(StrictSchema):
+    namespace: NamespaceName
+    service_name: ResourceName
+    deployment_name: ResourceName
+    max_pods: int = Field(default=20, ge=1, le=20)
+
+
+class ServicePodMemberV2(StrictSchema):
+    name: ResourceName
+    uid: str = Field(min_length=1, max_length=128, pattern=_UID)
+    resource_version: str = Field(min_length=1, max_length=128, pattern=_VERSION)
+    ready: bool | None
+    terminating: bool
+    selector_matches: bool
+    template_hash: str | None = Field(default=None, max_length=63)
+
+
+class ServiceMembershipOutputV2(StrictSchema):
+    namespace: NamespaceName
+    service_name: ResourceName
+    service_uid: str = Field(min_length=1, max_length=128, pattern=_UID)
+    service_resource_version: str = Field(min_length=1, max_length=128, pattern=_VERSION)
+    deployment_name: ResourceName
+    deployment_uid: str = Field(min_length=1, max_length=128, pattern=_UID)
+    deployment_generation: int = Field(ge=0)
+    observed_generation: int = Field(ge=0)
+    desired_replicas: int = Field(ge=0)
+    ready_replicas: int = Field(ge=0)
+    selector_count: int = Field(ge=0, le=20)
+    pods: tuple[ServicePodMemberV2, ...] = Field(max_length=20)
+    truncated: bool
+    rollout_ambiguous: bool
+    observed_at: datetime
+
+    @field_validator("observed_at")
+    @classmethod
+    def aware_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Service membership observation requires timezone")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_membership(self) -> ServiceMembershipOutputV2:
+        if (len({pod.uid for pod in self.pods}) != len(self.pods)
+            or len({pod.name for pod in self.pods}) != len(self.pods)):
+            raise ValueError("Service membership repeats a Pod identity")
+        if self.selector_count == 0 and any(pod.selector_matches for pod in self.pods):
+            raise ValueError("selectorless Service cannot match Deployment Pods")
+        hashes = {pod.template_hash for pod in self.pods if pod.template_hash is not None}
+        if (self.truncated or len(hashes) > 1 or self.ready_replicas < self.desired_replicas
+            or self.observed_generation < self.deployment_generation) and not self.rollout_ambiguous:
+            raise ValueError("incomplete or rolling membership cannot be marked stable")
+        return self
+
+
 class EndpointsInputV2(StrictSchema):
     namespace: NamespaceName
     service_name: ResourceName

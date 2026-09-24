@@ -49,9 +49,10 @@ def test_four_fixed_metric_tools_are_risk_zero_and_schema_bounded() -> None:
     fake = FakeReader([[datetime.now(UTC).timestamp(), "134217728"]])
     registry = ToolRegistry()
     register_prometheus_tools_v2(registry, _reader(fake))
-    assert len(registry.descriptors()) == 4
+    assert len(registry.descriptors()) == 5
     assert all(item.risk_level is ToolRiskLevel.READ_ONLY for item in registry.descriptors())
     for kind in ("cpu", "memory", "latency", "error_rate"):
+        fake.values = [[datetime.now(UTC).timestamp(), "0.25" if kind == "error_rate" else "134217728"]]
         response = asyncio.run(registry.invoke(ToolInvocation(
             call_id=f"call_{kind}", tool=f"prometheus.query_{kind}",
             arguments={"namespace": "team-a", "workload_name": "api"},
@@ -71,6 +72,46 @@ def test_four_fixed_metric_tools_are_risk_zero_and_schema_bounded() -> None:
     assert rejected.success is False
     assert rejected.error is not None and rejected.error.code is ErrorCode.INVALID_ARGUMENT
     assert len(fake.queries) == 4
+
+
+def test_ratio_over_one_is_rejected_at_provider_boundary() -> None:
+    fake = FakeReader([[NOW.timestamp(), "1.2"]])
+    arguments = MetricInputV2(namespace="team-a", workload_name="api")
+    with pytest.raises(PrometheusBoundaryError):
+        asyncio.run(PrometheusToolHandlersV2(_reader(fake), clock=lambda: NOW).query(
+            "error_rate", arguments,
+        ))
+
+
+def test_http_503_metric_is_exact_service_scoped_and_rejects_free_query() -> None:
+    from opspilot.evidence.v2 import V2EvidenceExtractorRegistry
+
+    fake = FakeReader([[datetime.now(UTC).timestamp(), "0.25"]])
+    registry = ToolRegistry()
+    register_prometheus_tools_v2(registry, _reader(fake))
+    invocation = ToolInvocation(
+        call_id="call_service_503", tool="prometheus.query_http_503_rate",
+        arguments={"namespace": "team-a", "service_name": "api"},
+    )
+    response = asyncio.run(registry.invoke(invocation))
+    assert response.success, response.error
+    assert len(fake.queries) == 1
+    assert 'service="api",status="503"' in fake.queries[0]
+    assert "pod=" not in fake.queries[0]
+    evidence = V2EvidenceExtractorRegistry().extract(
+        invocation=invocation, response=response,
+        trace_id="trace_503", tool_attempt_id="tool_503",
+        collected_at=datetime.now(UTC), evidence_id_factory=lambda: "ev_503",
+    )
+    assert len(evidence) == 1
+    assert evidence[0].resource == "team-a/service/api"
+    assert evidence[0].source == "prometheus_http_503_rate"
+    rejected = asyncio.run(registry.invoke(ToolInvocation(
+        call_id="call_injected_503", tool="prometheus.query_http_503_rate",
+        arguments={"namespace": "team-a", "service_name": "api", "query": "up"},
+    )))
+    assert rejected.success is False
+    assert rejected.error is not None and rejected.error.code is ErrorCode.INVALID_ARGUMENT
 
 
 def test_exact_scope_missing_stale_nan_and_window_bounds() -> None:

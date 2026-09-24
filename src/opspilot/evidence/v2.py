@@ -15,6 +15,7 @@ from opspilot.evidence.models import Evidence, EvidenceAttribute
 from opspilot.tools.kubernetes.models import (
     DeploymentOutput, PodEventsOutput, PodStatusOutput,
 )
+from opspilot.tools.kubernetes.v2_models import ServiceMembershipOutputV2
 from opspilot.tools.models import ToolInvocation, ToolResponse
 from opspilot.tools.prometheus import MetricOutputV2
 
@@ -33,6 +34,11 @@ class V2EvidenceExtractorRegistry(EvidenceExtractorRegistry):
     ) -> tuple[Evidence, ...]:
         if invocation.tool.startswith("prometheus.query_"):
             return _metric_evidence(
+                invocation, response, trace_id, tool_attempt_id,
+                collected_at, evidence_id_factory,
+            )
+        if invocation.tool == "k8s.get_service_membership":
+            return _membership_evidence(
                 invocation, response, trace_id, tool_attempt_id,
                 collected_at, evidence_id_factory,
             )
@@ -137,6 +143,54 @@ class V2EvidenceExtractorRegistry(EvidenceExtractorRegistry):
         return (*base, *extra)
 
 
+def _membership_evidence(
+    invocation: ToolInvocation, response: ToolResponse, trace_id: str,
+    tool_attempt_id: str, collected_at: datetime,
+    evidence_id_factory: Callable[[], str],
+) -> tuple[Evidence, ...]:
+    if not response.success or response.data is None:
+        raise EvidenceExtractionError("Membership Evidence requires a successful Tool response")
+    if (
+        response.metadata.call_id != invocation.call_id
+        or response.metadata.tool_name != invocation.tool
+    ):
+        raise EvidenceExtractionError("Membership response differs from invocation")
+    try:
+        output = ServiceMembershipOutputV2.model_validate_json(
+            json.dumps(response.data), strict=True,
+        )
+    except ValidationError:
+        raise EvidenceExtractionError("Membership output failed schema validation") from None
+    if (
+        output.namespace != invocation.arguments.get("namespace")
+        or output.service_name != invocation.arguments.get("service_name")
+        or output.deployment_name != invocation.arguments.get("deployment_name")
+    ):
+        raise EvidenceExtractionError("Membership identity differs from invocation")
+    active_ready = [pod for pod in output.pods if pod.ready is True and not pod.terminating]
+    matching_ready = [pod for pod in active_ready if pod.selector_matches]
+    return (Evidence(
+        evidence_id=evidence_id_factory(), trace_id=trace_id,
+        tool_call_id=tool_attempt_id, source="kubernetes_service_membership",
+        resource=f"{output.namespace}/service/{output.service_name}",
+        observed_at=min(output.observed_at, collected_at), collected_at=collected_at,
+        content="Bounded Deployment Pod labels were compared with the Service selector.",
+        source_confidence=1.0, raw_result_ref=tool_attempt_id,
+        attributes=(
+            EvidenceAttribute(key="service_uid", value=output.service_uid),
+            EvidenceAttribute(key="service_resource_version", value=output.service_resource_version),
+            EvidenceAttribute(key="deployment_uid", value=output.deployment_uid),
+            EvidenceAttribute(key="deployment_generation", value=output.deployment_generation),
+            EvidenceAttribute(key="observed_generation", value=output.observed_generation),
+            EvidenceAttribute(key="selector_count", value=output.selector_count),
+            EvidenceAttribute(key="active_ready_pod_count", value=len(active_ready)),
+            EvidenceAttribute(key="matching_ready_pod_count", value=len(matching_ready)),
+            EvidenceAttribute(key="membership_truncated", value=output.truncated),
+            EvidenceAttribute(key="rollout_ambiguous", value=output.rollout_ambiguous),
+        ),
+    ),)
+
+
 def _metric_evidence(
     invocation: ToolInvocation, response: ToolResponse, trace_id: str,
     tool_attempt_id: str, collected_at: datetime,
@@ -154,14 +208,17 @@ def _metric_evidence(
         output = MetricOutputV2.model_validate_json(json.dumps(response.data), strict=True)
     except ValidationError:
         raise EvidenceExtractionError("Metrics output failed schema validation") from None
+    target_key = "service_name" if output.metric == "http_503_rate" else "workload_name"
     if (
         invocation.tool != f"prometheus.query_{output.metric}"
-        or output.workload_name != invocation.arguments.get("workload_name")
+        or output.workload_name != invocation.arguments.get(target_key)
         or output.pod_name != invocation.arguments.get("pod_name")
         or output.container_name != invocation.arguments.get("container_name")
     ):
         raise EvidenceExtractionError("Metrics identity differs from invocation")
     resource = (
+        f"{output.namespace}/service/{output.workload_name}"
+        if output.metric == "http_503_rate" else
         f"{output.namespace}/{output.pod_name}:{output.container_name}"
         if output.pod_name is not None and output.container_name is not None
         else f"{output.namespace}/deployment/{output.workload_name}"

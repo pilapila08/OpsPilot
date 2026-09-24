@@ -8,6 +8,7 @@ import pytest
 from pydantic import JsonValue
 
 from opspilot.evidence import EvidenceExtractorRegistry
+from opspilot.evidence.v2 import V2EvidenceExtractorRegistry
 from opspilot.integrations.kubernetes import JsonObject
 from opspilot.integrations.kubernetes.errors import KubernetesDataError, KubernetesNotFoundError
 from opspilot.integrations.kubernetes.v2_client import KubernetesReaderV2
@@ -16,6 +17,7 @@ from opspilot.tools.kubernetes.v2_handlers import KubernetesToolHandlersV2
 from opspilot.tools.kubernetes.v2_models import (
     EndpointsInputV2, EndpointsOutputV2, IngressInputV2,
     ResourceUsageInputV2, ResourceUsageOutputV2, ServiceInputV2,
+    ServiceMembershipInputV2,
 )
 from opspilot.tools.kubernetes.v2_registry import build_kubernetes_registry_v2
 
@@ -135,7 +137,7 @@ def test_four_v2_tools_are_read_only_and_emit_bounded_evidence() -> None:
     fake = FakeV2Reader()
     registry = build_kubernetes_registry_v2(_reader(fake))
     descriptors = registry.descriptors()
-    assert len(descriptors) == 9
+    assert len(descriptors) == 10
     assert all(item.risk_level is ToolRiskLevel.READ_ONLY for item in descriptors)
     expected = {
         "k8s.get_service", "k8s.get_endpoints",
@@ -271,3 +273,66 @@ def test_multi_pod_snapshot_rejects_selector_mismatch_and_marks_truncation() -> 
     output = asyncio.run(handlers.get_resource_usage(request))
     assert output.snapshot.truncated is True
     assert output.snapshot.rollout_ambiguous is True
+
+
+def test_service_membership_compares_actual_pod_labels_without_exposing_them() -> None:
+    fake = FakeV2Reader()
+    fake.deployment["spec"] = {
+        "selector": {"matchLabels": {"app": "api"}}, "replicas": 1,
+    }
+    fake.deployment["status"] = {"readyReplicas": 1, "observedGeneration": 2}
+    fake.pods = (FakeV2Reader._pod("api-001", "pod-uid-1", "hash-a", True),)
+    cast(dict[str, JsonValue], fake.service["spec"])["selector"] = {"role": "backend"}
+    registry = build_kubernetes_registry_v2(_reader(fake))
+    invocation = ToolInvocation(
+        call_id="call_membership", tool="k8s.get_service_membership",
+        arguments={"namespace": "team-a", "service_name": "api", "deployment_name": "api"},
+    )
+    response = asyncio.run(registry.invoke(invocation))
+    assert response.success, response.error
+    assert response.data is not None
+    assert response.data["rollout_ambiguous"] is False
+    pods = cast(list[dict[str, JsonValue]], response.data["pods"])
+    assert pods[0]["selector_matches"] is False
+    encoded = json.dumps(response.data)
+    assert "role" not in encoded and "do-not-leak" not in encoded
+    evidence = V2EvidenceExtractorRegistry().extract(
+        invocation=invocation, response=response, trace_id="trace_503",
+        tool_attempt_id="tool_membership", collected_at=datetime.now(UTC),
+        evidence_id_factory=lambda: "ev_membership",
+    )
+    assert len(evidence) == 1
+    attrs = {item.key: item.value for item in evidence[0].attributes}
+    assert attrs["active_ready_pod_count"] == 1
+    assert attrs["matching_ready_pod_count"] == 0
+    assert attrs["service_resource_version"] == "12"
+    assert fake.selector_calls == ["app=api"]
+
+
+def test_service_membership_rollout_or_truncated_pods_are_not_stable() -> None:
+    fake = FakeV2Reader()
+    fake.deployment["status"] = {"readyReplicas": 1}
+    fake.pods_truncated = True
+    output = asyncio.run(KubernetesToolHandlersV2(_reader(fake)).get_service_membership(
+        ServiceMembershipInputV2(namespace="team-a", service_name="api", deployment_name="api"),
+    ))
+    assert output.truncated is True
+    assert output.rollout_ambiguous is True
+    fake = FakeV2Reader()
+    fake.deployment["status"] = {"readyReplicas": 1}
+    output = asyncio.run(KubernetesToolHandlersV2(_reader(fake)).get_service_membership(
+        ServiceMembershipInputV2(namespace="team-a", service_name="api", deployment_name="api"),
+    ))
+    assert output.rollout_ambiguous is True
+
+
+def test_service_membership_rejects_duplicate_ready_conditions() -> None:
+    fake = FakeV2Reader()
+    pod = fake.pods[0]
+    status = cast(dict[str, JsonValue], pod["status"])
+    conditions = cast(list[JsonValue], status["conditions"])
+    conditions.append({"type": "Ready", "status": "True"})
+    with pytest.raises(KubernetesDataError, match="duplicate Ready"):
+        asyncio.run(KubernetesToolHandlersV2(_reader(fake)).get_service_membership(
+            ServiceMembershipInputV2(namespace="team-a", service_name="api", deployment_name="api"),
+        ))

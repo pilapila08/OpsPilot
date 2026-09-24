@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {
+    "namespace": "team-a", "service_name": "api", "truncated": false,
+    "observed_at": "2026-09-24T10:00:00Z", "slices": []
+  },
+  "metadata": {"call_id": "call_endpoints", "tool_name": "k8s.get_endpoints", "source": "kubernetes", "duration_ms": 1, "tool_version": "v2"},
+  "error": null
+}

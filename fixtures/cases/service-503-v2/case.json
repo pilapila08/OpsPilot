@@ -1,0 +1,140 @@
+{
+  "schema_version": 2,
+  "case_id": "service_503_v2",
+  "title": "Service 503 with no ready endpoints",
+  "query": "Why is the api Service returning 503?",
+  "trace_id": "trace_service_503_case",
+  "target": {"namespace": "team-a", "kind": "service", "resource": "api"},
+  "candidate_families": ["service_503"],
+  "allowed_tools": ["k8s.get_ingress", "k8s.get_service", "k8s.get_endpoints", "k8s.get_service_membership", "prometheus.query_http_503_rate"],
+  "allowed_sources": ["kubernetes", "prometheus"],
+  "allowed_evidence_sources": ["kubernetes_ingress", "kubernetes_service", "kubernetes_endpoints", "kubernetes_service_membership", "prometheus_http_503_rate"],
+  "allowed_resource_names": ["api", "edge"],
+  "branches": [{
+    "branch_id": "no_ready",
+    "fault_family": "service_503",
+    "steps": [
+      {"phase": "fault", "invocation": {"call_id": "call_ingress", "tool": "k8s.get_ingress", "arguments": {"namespace": "team-a", "ingress_name": "edge"}}, "response_file": "responses/ingress.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_metric", "tool": "prometheus.query_http_503_rate", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/metric.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_service", "tool": "k8s.get_service", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/service.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_endpoints", "tool": "k8s.get_endpoints", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/endpoints-empty.json"}
+    ],
+    "evidence": [
+      {"evidence_id": "ev_case_route", "trace_id": "trace_service_503_case", "tool_call_id": "call_ingress", "source": "kubernetes_ingress", "resource": "team-a/ingress/edge", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Ingress route points to api:80.", "source_confidence": 1.0, "attributes": [{"key": "backend_service", "value": "api"}, {"key": "backend_port", "value": 80}]},
+      {"evidence_id": "ev_case_metric", "trace_id": "trace_service_503_case", "tool_call_id": "call_metric", "source": "prometheus_http_503_rate", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Positive Service-scoped 503 ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.25}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_service", "trace_id": "trace_service_503_case", "tool_call_id": "call_service", "source": "kubernetes_service", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Service port 80 targets 8080.", "source_confidence": 1.0, "attributes": [{"key": "service_port", "value": 80}, {"key": "target_port", "value": 8080}]},
+      {"evidence_id": "ev_case_endpoints", "trace_id": "trace_service_503_case", "tool_call_id": "call_endpoints", "source": "kubernetes_endpoints", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "No ready endpoints.", "source_confidence": 1.0, "attributes": [{"key": "endpoint_count", "value": 0}, {"key": "ready_endpoint_count", "value": 0}, {"key": "endpoint_snapshot_truncated", "value": false}]}
+    ],
+    "required_signals": [
+      {"signal": "service_503.route", "evidence_id": "ev_case_route"},
+      {"signal": "service_503.metric", "evidence_id": "ev_case_metric"},
+      {"signal": "service_503.port", "evidence_id": "ev_case_service"},
+      {"signal": "service_503.endpoints", "evidence_id": "ev_case_endpoints"}
+    ],
+    "contradiction_signals": ["service_503.ready_backend", "service_503.truncated_snapshot"],
+    "expected_diagnosis": {
+      "status": "COMPLETED",
+      "root_cause": "Service api had no ready EndpointSlice backends during observed 503s.",
+      "recommendation": "Inspect backend Pod readiness and Service selector before changing traffic configuration.",
+      "claim": {"claim_id": "claim_service_503_no_ready", "text": "503s coincide with no ready EndpointSlice backends for the routed Service.", "evidence_ids": ["ev_case_route", "ev_case_service", "ev_case_endpoints", "ev_case_metric"], "inference_confidence": 0.8},
+      "verification": {"claim_id": "claim_service_503_no_ready", "supported": true, "verification_confidence": 0.8, "checked_evidence_ids": ["ev_case_route", "ev_case_metric", "ev_case_service", "ev_case_endpoints"], "missing_evidence": [], "contradictions": [], "rationale": "Service 503 metric, Ingress route, Service port and complete zero-ready EndpointSlice snapshot overlap."}
+    },
+    "recovery": null
+  }, {
+    "branch_id": "healthy_backend",
+    "fault_family": "service_503",
+    "steps": [
+      {"phase": "fault", "invocation": {"call_id": "call_ingress", "tool": "k8s.get_ingress", "arguments": {"namespace": "team-a", "ingress_name": "edge"}}, "response_file": "responses/ingress.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_metric", "tool": "prometheus.query_http_503_rate", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/metric.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_service", "tool": "k8s.get_service", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/service.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_endpoints", "tool": "k8s.get_endpoints", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/endpoints-ready.json"}
+    ],
+    "evidence": [
+      {"evidence_id": "ev_case_route", "trace_id": "trace_service_503_case", "tool_call_id": "call_ingress", "source": "kubernetes_ingress", "resource": "team-a/ingress/edge", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Ingress route points to api:80.", "source_confidence": 1.0, "attributes": [{"key": "backend_service", "value": "api"}, {"key": "backend_port", "value": 80}]},
+      {"evidence_id": "ev_case_metric", "trace_id": "trace_service_503_case", "tool_call_id": "call_metric", "source": "prometheus_http_503_rate", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Positive Service-scoped 503 ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.25}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_service", "trace_id": "trace_service_503_case", "tool_call_id": "call_service", "source": "kubernetes_service", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Service port 80 targets 8080.", "source_confidence": 1.0, "attributes": [{"key": "service_port", "value": 80}, {"key": "target_port", "value": 8080}]},
+      {"evidence_id": "ev_case_endpoints", "trace_id": "trace_service_503_case", "tool_call_id": "call_endpoints", "source": "kubernetes_endpoints", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "One ready backend remains.", "source_confidence": 1.0, "attributes": [{"key": "endpoint_count", "value": 1}, {"key": "ready_endpoint_count", "value": 1}, {"key": "endpoint_snapshot_truncated", "value": false}]}
+    ],
+    "required_signals": [
+      {"signal": "service_503.route", "evidence_id": "ev_case_route"},
+      {"signal": "service_503.metric", "evidence_id": "ev_case_metric"},
+      {"signal": "service_503.port", "evidence_id": "ev_case_service"},
+      {"signal": "service_503.endpoints", "evidence_id": "ev_case_endpoints"}
+    ],
+    "contradiction_signals": ["service_503.ready_backend"],
+    "expected_diagnosis": {
+      "status": "PARTIAL",
+      "root_cause": "The Service 503 source remains unproven.",
+      "recommendation": "Collect a fresh, complete route/Service/EndpointSlice snapshot and Service-scoped 503 samples.",
+      "claim": {"claim_id": "claim_service_503_no_ready", "text": "The available observations do not establish a no-ready-backend 503 cause.", "evidence_ids": ["ev_case_route", "ev_case_service", "ev_case_endpoints", "ev_case_metric"], "inference_confidence": 0.0},
+      "verification": {"claim_id": "claim_service_503_no_ready", "supported": false, "verification_confidence": 0.0, "checked_evidence_ids": ["ev_case_route", "ev_case_metric", "ev_case_service", "ev_case_endpoints"], "missing_evidence": [], "contradictions": [{"evidence_ids": ["ev_case_endpoints"], "reason": "Ready endpoints exist; no-ready-backend cause is contradicted."}], "rationale": "The scoped no-ready-backend hypothesis is incomplete or contradicted."}
+    },
+    "recovery": null
+  }, {
+    "branch_id": "port_anomaly",
+    "fault_family": "service_503",
+    "steps": [
+      {"phase": "fault", "invocation": {"call_id": "call_ingress", "tool": "k8s.get_ingress", "arguments": {"namespace": "team-a", "ingress_name": "edge"}}, "response_file": "responses/ingress.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_metric", "tool": "prometheus.query_http_503_rate", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/metric.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_service", "tool": "k8s.get_service", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/service.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_endpoints", "tool": "k8s.get_endpoints", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/endpoints-port-mismatch.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_membership", "tool": "k8s.get_service_membership", "arguments": {"namespace": "team-a", "service_name": "api", "deployment_name": "api"}}, "response_file": "responses/membership.json"}
+    ],
+    "evidence": [
+      {"evidence_id": "ev_case_route", "trace_id": "trace_service_503_case", "tool_call_id": "call_ingress", "source": "kubernetes_ingress", "resource": "team-a/ingress/edge", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Ingress route points to api:80.", "source_confidence": 1.0, "attributes": [{"key": "backend_service", "value": "api"}, {"key": "backend_port", "value": 80}]},
+      {"evidence_id": "ev_case_metric", "trace_id": "trace_service_503_case", "tool_call_id": "call_metric", "source": "prometheus_http_503_rate", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Positive Service-scoped 503 ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.25}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_service", "trace_id": "trace_service_503_case", "tool_call_id": "call_service", "source": "kubernetes_service", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Service targetPort 8080.", "source_confidence": 1.0, "attributes": [{"key": "service_port", "value": 80}, {"key": "target_port", "value": 8080}]},
+      {"evidence_id": "ev_case_endpoints", "trace_id": "trace_service_503_case", "tool_call_id": "call_endpoints", "source": "kubernetes_endpoints", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Ready EndpointSlice port 9999.", "source_confidence": 1.0, "attributes": [{"key": "ready_endpoint_count", "value": 1}, {"key": "endpoint_ports", "value": "[[\"http\", \"TCP\", 9999]]"}]},
+      {"evidence_id": "ev_case_membership", "trace_id": "trace_service_503_case", "tool_call_id": "call_membership", "source": "kubernetes_service_membership", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Stable matching ready Pod.", "source_confidence": 1.0, "attributes": [{"key": "active_ready_pod_count", "value": 1}, {"key": "matching_ready_pod_count", "value": 1}]}
+    ],
+    "required_signals": [
+      {"signal": "service_503.route", "evidence_id": "ev_case_route"},
+      {"signal": "service_503.metric", "evidence_id": "ev_case_metric"},
+      {"signal": "service_503.port", "evidence_id": "ev_case_service"},
+      {"signal": "service_503.endpoints", "evidence_id": "ev_case_endpoints"},
+      {"signal": "service_503.membership", "evidence_id": "ev_case_membership"}
+    ],
+    "contradiction_signals": ["service_503.application_origin"],
+    "expected_diagnosis": {
+      "status": "PARTIAL",
+      "root_cause": "A Service/EndpointSlice port discrepancy was observed; the 503 cause remains unproven.",
+      "recommendation": "Check the Service targetPort and EndpointSlice controller; obtain gateway-side 503 provenance before attributing cause.",
+      "claim": {"claim_id": "claim_service_503_port_anomaly", "text": "Service targetPort differs from the published ready EndpointSlice port during observed 503s; causality is unproven.", "evidence_ids": ["ev_case_route", "ev_case_service", "ev_case_endpoints", "ev_case_metric", "ev_case_membership"], "inference_confidence": 0.4},
+      "verification": {"claim_id": "claim_service_503_port_anomaly", "supported": false, "verification_confidence": 0.4, "checked_evidence_ids": ["ev_case_route", "ev_case_metric", "ev_case_service", "ev_case_endpoints", "ev_case_membership"], "missing_evidence": [{"requirement": "port_causality", "reason": "Gateway-side 503 provenance or a safe traffic observation is required to attribute 503s to the port discrepancy."}], "contradictions": [], "rationale": "Service, EndpointSlice and stable Pod membership show a port discrepancy, but 503 origin is not proven."}
+    },
+    "recovery": null
+  }, {
+    "branch_id": "selector_mismatch",
+    "fault_family": "service_503",
+    "steps": [
+      {"phase": "fault", "invocation": {"call_id": "call_ingress", "tool": "k8s.get_ingress", "arguments": {"namespace": "team-a", "ingress_name": "edge"}}, "response_file": "responses/ingress.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_metric", "tool": "prometheus.query_http_503_rate", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/metric.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_service", "tool": "k8s.get_service", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/service.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_endpoints", "tool": "k8s.get_endpoints", "arguments": {"namespace": "team-a", "service_name": "api"}}, "response_file": "responses/endpoints-empty.json"},
+      {"phase": "fault", "invocation": {"call_id": "call_membership", "tool": "k8s.get_service_membership", "arguments": {"namespace": "team-a", "service_name": "api", "deployment_name": "api"}}, "response_file": "responses/membership-selector-mismatch.json"}
+    ],
+    "evidence": [
+      {"evidence_id": "ev_case_route", "trace_id": "trace_service_503_case", "tool_call_id": "call_ingress", "source": "kubernetes_ingress", "resource": "team-a/ingress/edge", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Ingress route points to api:80.", "source_confidence": 1.0, "attributes": [{"key": "backend_service", "value": "api"}, {"key": "backend_port", "value": 80}]},
+      {"evidence_id": "ev_case_metric", "trace_id": "trace_service_503_case", "tool_call_id": "call_metric", "source": "prometheus_http_503_rate", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Positive Service-scoped 503 ratio.", "source_confidence": 1.0, "attributes": [{"key": "metric_value", "value": 0.25}, {"key": "metric_unit", "value": "ratio"}]},
+      {"evidence_id": "ev_case_service", "trace_id": "trace_service_503_case", "tool_call_id": "call_service", "source": "kubernetes_service", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Service selector app=api.", "source_confidence": 1.0, "attributes": [{"key": "service_port", "value": 80}, {"key": "service_uid", "value": "service-1"}, {"key": "service_resource_version", "value": "12"}]},
+      {"evidence_id": "ev_case_endpoints", "trace_id": "trace_service_503_case", "tool_call_id": "call_endpoints", "source": "kubernetes_endpoints", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "No ready endpoints.", "source_confidence": 1.0, "attributes": [{"key": "endpoint_count", "value": 0}, {"key": "ready_endpoint_count", "value": 0}]},
+      {"evidence_id": "ev_case_membership", "trace_id": "trace_service_503_case", "tool_call_id": "call_membership", "source": "kubernetes_service_membership", "resource": "team-a/service/api", "observed_at": "2026-09-24T10:00:00Z", "collected_at": "2026-09-24T10:00:00Z", "content": "Ready Deployment Pod labels do not match Service selector.", "source_confidence": 1.0, "attributes": [{"key": "active_ready_pod_count", "value": 1}, {"key": "matching_ready_pod_count", "value": 0}, {"key": "rollout_ambiguous", "value": false}]}
+    ],
+    "required_signals": [
+      {"signal": "service_503.route", "evidence_id": "ev_case_route"},
+      {"signal": "service_503.metric", "evidence_id": "ev_case_metric"},
+      {"signal": "service_503.port", "evidence_id": "ev_case_service"},
+      {"signal": "service_503.endpoints", "evidence_id": "ev_case_endpoints"},
+      {"signal": "service_503.membership", "evidence_id": "ev_case_membership"}
+    ],
+    "contradiction_signals": ["service_503.rollout", "service_503.matching_ready_pod"],
+    "expected_diagnosis": {
+      "status": "COMPLETED",
+      "root_cause": "Service api selector excluded all observed ready Deployment Pods during 503s.",
+      "recommendation": "Inspect backend Pod readiness and Service selector before changing traffic configuration.",
+      "claim": {"claim_id": "claim_service_503_selector", "text": "The Service selector excludes all observed ready Deployment Pods during 503s.", "evidence_ids": ["ev_case_route", "ev_case_service", "ev_case_endpoints", "ev_case_metric", "ev_case_membership"], "inference_confidence": 0.9},
+      "verification": {"claim_id": "claim_service_503_selector", "supported": true, "verification_confidence": 0.9, "checked_evidence_ids": ["ev_case_route", "ev_case_metric", "ev_case_service", "ev_case_endpoints", "ev_case_membership"], "missing_evidence": [], "contradictions": [], "rationale": "A stable Pod label comparison corroborates selector drift with 503 and zero-ready endpoints."}
+    },
+    "recovery": null
+  }]
+}

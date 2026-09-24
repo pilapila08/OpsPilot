@@ -21,8 +21,9 @@ from opspilot.tools.kubernetes.models import (
 )
 from opspilot.tools.kubernetes.v2_models import (
     EndpointsInputV2, IngressInputV2, ResourceUsageInputV2, ServiceInputV2,
+    ServiceMembershipInputV2,
 )
-from opspilot.tools.prometheus import MetricInputV2
+from opspilot.tools.prometheus import MetricInputV2, Service503InputV2
 from opspilot.tools.models import TOOL_NAME_PATTERN, ToolDescriptor, ToolRiskLevel
 
 _CALL_ID = r"^[a-z][a-z0-9_-]{2,127}$"
@@ -36,8 +37,11 @@ _SIGNAL_KEYS = frozenset({
     "initial_delay_seconds", "period_seconds", "failure_threshold",
     "startup_probe_configured", "startup_probe_period_seconds",
     "startup_probe_failure_threshold",
-    "service_port", "target_port", "selector_count", "endpoint_count",
+    "service_port", "service_port_name", "service_type", "target_port",
+    "selector_count", "endpoint_count", "endpoint_slice_count",
     "ready_endpoint_count", "serving_endpoint_count", "endpoint_snapshot_truncated",
+    "unknown_ready_endpoint_count", "terminating_serving_endpoint_count",
+    "active_ready_pod_count", "matching_ready_pod_count", "membership_truncated",
     "backend_service", "backend_port", "route_path", "cpu_quantity",
     "memory_quantity", "deployment_generation", "rollout_ambiguous",
     "termination_reason", "memory_limit_bytes", "metric_value", "metric_unit",
@@ -53,13 +57,15 @@ _NUMERIC_FACTS = frozenset({
     "startup_duration_seconds", "terminated_after_seconds",
     "initial_delay_seconds", "period_seconds", "failure_threshold",
     "startup_probe_period_seconds", "startup_probe_failure_threshold",
-    "service_port", "selector_count", "endpoint_count",
+    "service_port", "selector_count", "endpoint_count", "endpoint_slice_count",
     "ready_endpoint_count", "serving_endpoint_count", "deployment_generation",
+    "unknown_ready_endpoint_count", "terminating_serving_endpoint_count",
+    "active_ready_pod_count", "matching_ready_pod_count",
     "memory_limit_bytes",
 })
 _BOOLEAN_FACTS = frozenset({
     "liveness_failure", "truncated", "startup_probe_configured",
-    "endpoint_snapshot_truncated", "rollout_ambiguous",
+    "endpoint_snapshot_truncated", "rollout_ambiguous", "membership_truncated",
     "pod_ready", "readiness_failure",
 })
 _NAMED_PORT = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
@@ -73,6 +79,7 @@ _DEFAULT_INPUT_MODELS: Mapping[str, type[BaseModel]] = {
     "k8s.get_previous_logs": PreviousPodLogsInput,
     "k8s.get_deployment": DeploymentInput,
     "k8s.get_service": ServiceInputV2,
+    "k8s.get_service_membership": ServiceMembershipInputV2,
     "k8s.get_endpoints": EndpointsInputV2,
     "k8s.get_ingress": IngressInputV2,
     "k8s.get_resource_usage": ResourceUsageInputV2,
@@ -80,6 +87,7 @@ _DEFAULT_INPUT_MODELS: Mapping[str, type[BaseModel]] = {
     "prometheus.query_memory": MetricInputV2,
     "prometheus.query_latency": MetricInputV2,
     "prometheus.query_error_rate": MetricInputV2,
+    "prometheus.query_http_503_rate": Service503InputV2,
 }
 
 
@@ -177,6 +185,8 @@ def _safe_fact(key: str, value: object) -> ObservationFactV2 | None:
     if isinstance(value, str):
         pattern = {
             "backend_service": _RESOURCE_NAME,
+            "service_port_name": _NAMED_PORT,
+            "service_type": re.compile(r"^(ClusterIP|NodePort|LoadBalancer|ExternalName)$"),
             "route_path": _ROUTE_PATH,
             "cpu_quantity": _QUANTITY,
             "memory_quantity": _QUANTITY,

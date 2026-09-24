@@ -11,7 +11,7 @@ from opspilot.tools.kubernetes.v2_handlers import KubernetesToolHandlersV2
 from opspilot.tools.kubernetes.v2_models import (
     EndpointsInputV2, EndpointsOutputV2, IngressInputV2, IngressOutputV2,
     ResourceUsageInputV2, ResourceUsageOutputV2, ServiceInputV2,
-    ServiceOutputV2,
+    ServiceOutputV2, ServiceMembershipInputV2, ServiceMembershipOutputV2,
 )
 from opspilot.tools.models import RetryPolicy, ToolDefinition, ToolRiskLevel
 from opspilot.tools.registry import ToolRegistry
@@ -35,6 +35,15 @@ def kubernetes_v2_tool_definitions(
             input_model=ServiceInputV2, output_model=ServiceOutputV2,
             handler=handlers.get_service, source="kubernetes",
             timeout_seconds=10, retry_policy=retry, version="v2",
+        ),
+        ToolDefinition(
+            name="k8s.get_service_membership",
+            description="Compare one Service selector to bounded Deployment Pod labels.",
+            risk_level=ToolRiskLevel.READ_ONLY,
+            input_model=ServiceMembershipInputV2,
+            output_model=ServiceMembershipOutputV2,
+            handler=handlers.get_service_membership, source="kubernetes",
+            timeout_seconds=20, retry_policy=retry, version="v2",
         ),
         ToolDefinition(
             name="k8s.get_endpoints", description="Read bounded EndpointSlices for one Service.",

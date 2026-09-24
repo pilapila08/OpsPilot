@@ -14,7 +14,7 @@ from opspilot.integrations.kubernetes.errors import (
     KubernetesDataError, KubernetesNotFoundError,
 )
 from opspilot.integrations.kubernetes.models import JsonObject
-from opspilot.integrations.kubernetes.targeting import _valid_label
+from opspilot.integrations.kubernetes.targeting import _deployment_selector, _valid_label
 from opspilot.integrations.kubernetes.targeting_v2 import MultiPodResolverV2
 from opspilot.integrations.kubernetes.v2_client import KubernetesReaderV2
 from opspilot.tools.kubernetes.v2_models import (
@@ -22,6 +22,7 @@ from opspilot.tools.kubernetes.v2_models import (
     EndpointsInputV2, EndpointsOutputV2, IngressInputV2, IngressOutputV2,
     IngressRouteV2, PodUsageV2, ResourceUsageInputV2, ResourceUsageOutputV2,
     ServiceInputV2, ServiceOutputV2, ServicePortV2,
+    ServiceMembershipInputV2, ServiceMembershipOutputV2, ServicePodMemberV2,
 )
 
 _PATH = re.compile(r"^/[A-Za-z0-9._~/%-]*$")
@@ -71,6 +72,98 @@ class KubernetesToolHandlersV2:
             )
         except ValidationError:
             raise KubernetesDataError("Kubernetes Service data is invalid") from None
+
+    async def get_service_membership(
+        self, arguments: ServiceMembershipInputV2,
+    ) -> ServiceMembershipOutputV2:
+        service = await self.get_service(ServiceInputV2(
+            namespace=arguments.namespace, service_name=arguments.service_name,
+        ))
+        deployment = await self._reader.read_deployment(
+            namespace=arguments.namespace, deployment_name=arguments.deployment_name,
+        )
+        _, deployment_uid, _ = _identity(
+            deployment, arguments.namespace, arguments.deployment_name,
+        )
+        selector = _deployment_selector(
+            deployment, expected_namespace=arguments.namespace,
+            expected_name=arguments.deployment_name,
+        )
+        spec = _object(deployment.get("spec"), "Deployment spec")
+        selection = _object(spec.get("selector"), "Deployment selector")
+        deployment_labels = _object(selection.get("matchLabels"), "Deployment labels")
+        metadata = _object(deployment.get("metadata"), "Deployment metadata")
+        generation = _int(metadata.get("generation"), "Deployment generation")
+        desired = _int(spec.get("replicas", 1), "Deployment replicas")
+        status = _object(deployment.get("status", {}), "Deployment status")
+        ready_replicas = _int(status.get("readyReplicas", 0), "Deployment ready replicas")
+        observed_generation = _int(status.get("observedGeneration", 0), "Deployment observed generation")
+        raw_pods, truncated = await self._reader.list_pods_bounded(
+            namespace=arguments.namespace, label_selector=selector,
+            limit=arguments.max_pods,
+        )
+        truncated = truncated or len(raw_pods) > arguments.max_pods
+        pods: list[ServicePodMemberV2] = []
+        seen: set[str] = set()
+        for raw in raw_pods[:arguments.max_pods]:
+            name, uid, version = _identity(raw, arguments.namespace, None)
+            if uid in seen:
+                raise KubernetesDataError("Deployment Pod snapshot repeats a UID")
+            seen.add(uid)
+            pod_metadata = _object(raw.get("metadata"), "Pod metadata")
+            labels = _object(pod_metadata.get("labels"), "Pod labels")
+            if any(labels.get(key) != value for key, value in deployment_labels.items()):
+                raise KubernetesDataError("Pod labels differ from Deployment selector")
+            pod_status = _object(raw.get("status"), "Pod status")
+            conditions = _list(pod_status.get("conditions"), "Pod conditions", 100)
+            ready: bool | None = None
+            ready_seen = False
+            for condition in conditions:
+                if condition.get("type") != "Ready":
+                    continue
+                if ready_seen:
+                    raise KubernetesDataError("Pod has duplicate Ready conditions")
+                ready_seen = True
+                value = condition.get("status")
+                if not isinstance(value, str) or value not in {"True", "False", "Unknown"}:
+                    raise KubernetesDataError("Pod Ready condition is invalid")
+                ready = True if value == "True" else False if value == "False" else None
+            template_hash = labels.get("pod-template-hash")
+            if template_hash is not None and (
+                not isinstance(template_hash, str) or len(template_hash) > 63
+            ):
+                raise KubernetesDataError("Pod template hash is invalid")
+            try:
+                pods.append(ServicePodMemberV2(
+                    name=name, uid=uid, resource_version=version,
+                    ready=ready, terminating=pod_metadata.get("deletionTimestamp") is not None,
+                    selector_matches=bool(service.selector) and all(
+                        labels.get(key) == value for key, value in service.selector.items()
+                    ), template_hash=template_hash,
+                ))
+            except ValidationError:
+                raise KubernetesDataError("Pod membership snapshot is invalid") from None
+        pods.sort(key=lambda item: (item.name, item.uid))
+        hashes = {item.template_hash for item in pods if item.template_hash is not None}
+        ambiguous = (
+            truncated or len(hashes) > 1 or ready_replicas < desired
+            or observed_generation < generation
+            or (len(pods) > 1 and any(item.template_hash is None for item in pods))
+        )
+        try:
+            return ServiceMembershipOutputV2(
+                namespace=arguments.namespace, service_name=service.name,
+                service_uid=service.uid, service_resource_version=service.resource_version,
+                deployment_name=arguments.deployment_name,
+                deployment_uid=deployment_uid, deployment_generation=generation,
+                observed_generation=observed_generation,
+                desired_replicas=desired, ready_replicas=ready_replicas,
+                selector_count=len(service.selector), pods=tuple(pods),
+                truncated=truncated, rollout_ambiguous=ambiguous,
+                observed_at=_aware(self._clock(), "Service membership observation time"),
+            )
+        except ValidationError:
+            raise KubernetesDataError("Service membership snapshot is invalid") from None
 
     async def get_endpoints(self, arguments: EndpointsInputV2) -> EndpointsOutputV2:
         raw_slices, truncated = await self._reader.list_endpoint_slices(
